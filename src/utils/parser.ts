@@ -16,7 +16,6 @@ interface ParsedJobData {
  * Optimized version with regex caching for better performance
  */
 function cleanHtmlContent(html: string): string {
-  // Cache regex patterns to improve performance
   const scriptRegex = /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi;
   const styleRegex = /<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi;
   const tagRegex = /<[^>]*>/g;
@@ -63,7 +62,6 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
   try {
     const $ = load(html);
     
-    // Run multiple parsing strategies in parallel
     const [
       hiringPattern,
       metaData,
@@ -74,34 +72,17 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
       locationData,
       structuredData
     ] = await Promise.all([
-      // Extract hiring pattern
       parseHiringPattern($),
-      
-      // Extract metadata (job type, salary, etc.)
       parseMetaData($),
-      
-      // Extract content sections (responsibilities, requirements, etc.)
       parseSections($),
-      
-      // Extract job title from various sources
       parseJobTitle($, html),
-      
-      // Extract company name from various sources
       parseCompanyName($, html),
-      
-      // Extract job description from various sources
       parseDescription($, html),
-      
-      // Extract location/salary/job type
       parseLocationAndDetails($, html),
-      
-      // Parse JSON-LD structured data
       parseStructuredData(html)
     ]);
     
-    // Apply extracted data with priorities
     
-    // Apply hiring pattern data
     if (hiringPattern.company) {
       result.company = hiringPattern.company;
     }
@@ -109,7 +90,6 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
       result.title = hiringPattern.title;
     }
     
-    // Apply metadata
     if (metaData.jobType) {
       result.jobType = metaData.jobType;
     }
@@ -120,7 +100,6 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
       result.description = `Experience Required: ${metaData.experienceInfo}\n\n${result.description}`;
     }
     
-    // Apply location data
     if (locationData.location) {
       result.location = locationData.location;
     }
@@ -131,7 +110,6 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
       result.jobType = locationData.jobType;
     }
     
-    // Apply section content to description
     if (sectionData.sections && Object.keys(sectionData.sections).length > 0) {
       let descriptionParts = [];
       for (const [section, content] of Object.entries(sectionData.sections)) {
@@ -141,33 +119,28 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
       result.description = descriptionParts.join('\n\n');
     }
     
-    // Add skills if not already included
     if (sectionData.skills && !result.description.includes('Skills')) {
       result.description += '\n\nSkills Required:\n' + sectionData.skills.join('\n');
     }
     
-    // Apply title data with priority
     if (titleData.titleFromMeta && (!result.title || result.title === 'Job Position')) {
       result.title = titleData.titleFromMeta;
     } else if (titleData.titleFromHeader && (!result.title || result.title === 'Job Position')) {
       result.title = titleData.titleFromHeader;
     }
     
-    // Apply company data with priority
     if (companyData.companyFromMeta && (!result.company || result.company === 'Company')) {
       result.company = companyData.companyFromMeta;
     } else if (companyData.companyFromDOM && (!result.company || result.company === 'Company')) {
       result.company = companyData.companyFromDOM;
     }
     
-    // Apply description as fallback
     if (!result.description || result.description.length < 50) {
       if (descriptionData.description && descriptionData.description.length > 50) {
         result.description = descriptionData.description;
       }
     }
     
-    // Apply structured data as fallbacks
     if (structuredData) {
       if (structuredData.title && (!result.title || result.title === 'Job Position')) {
         result.title = structuredData.title;
@@ -198,7 +171,6 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
       }
     }
     
-    // Final cleanup
     if (result.title) {
       result.title = result.title.replace(/hirejobs/gi, '').trim();
       if (result.title === '' || result.title.toLowerCase() === 'job details') {
@@ -314,7 +286,6 @@ async function parseSections($: CheerioAPI): Promise<{ sections: {[key: string]:
     });
   });
   
-  // Parse skills lists
   const skillsList = $('ul, ol').filter((_, el) => {
     return $(el).text().includes('Skills Required') || 
            $(el).prev().text().includes('Skills');
@@ -335,7 +306,6 @@ async function parseJobTitle(_$: CheerioAPI, html: string): Promise<{ titleFromM
   let titleFromMeta = '';
   let titleFromHeader = '';
   
-  // From page title
   const titleMatch = html.match(/<title>(.*?)\s*\|\s*HireJobs<\/title>/i);
   if (titleMatch && titleMatch[1]) {
     const titleParts = titleMatch[1].split(' at ');
@@ -346,7 +316,6 @@ async function parseJobTitle(_$: CheerioAPI, html: string): Promise<{ titleFromM
     }
   }
   
-  // From OpenGraph meta
   const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
   if (ogTitleMatch && ogTitleMatch[1]) {
     const ogTitle = ogTitleMatch[1].trim();
@@ -360,7 +329,6 @@ async function parseJobTitle(_$: CheerioAPI, html: string): Promise<{ titleFromM
     }
   }
   
-  // From H1 tags
   const h1Matches = html.match(/<h1[^>]*>(.*?)<\/h1>/gi);
   if (h1Matches) {
     for (const h1Tag of h1Matches) {
@@ -374,7 +342,6 @@ async function parseJobTitle(_$: CheerioAPI, html: string): Promise<{ titleFromM
     }
   }
   
-  // From H2 tags (fallback)
   if (!titleFromHeader) {
     const h2Matches = html.match(/<h2[^>]*>(.*?)<\/h2>/gi);
     if (h2Matches) {
@@ -400,7 +367,6 @@ async function parseCompanyName(_$: CheerioAPI, html: string): Promise<{ company
   let companyFromMeta = '';
   let companyFromDOM = '';
   
-  // From title tag
   const titleMatch = html.match(/<title>(.*?)\s*\|\s*HireJobs<\/title>/i);
   if (titleMatch && titleMatch[1]) {
     const titleParts = titleMatch[1].split(' at ');
@@ -409,7 +375,6 @@ async function parseCompanyName(_$: CheerioAPI, html: string): Promise<{ company
     }
   }
   
-  // From OG tags
   const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
   if (ogTitleMatch && ogTitleMatch[1]) {
     const ogTitle = ogTitleMatch[1].trim();
@@ -421,7 +386,6 @@ async function parseCompanyName(_$: CheerioAPI, html: string): Promise<{ company
     }
   }
   
-  // From company-related DOM elements
   const companyMatches = [
     html.match(/<div[^>]*class="[^"]*company-name[^"]*"[^>]*>([\s\S]*?)<\/div>/i),
     html.match(/<span[^>]*class="[^"]*company-name[^"]*"[^>]*>([\s\S]*?)<\/span>/i),
@@ -448,7 +412,6 @@ async function parseLocationAndDetails($: CheerioAPI, html: string): Promise<{ l
   let salary = '';
   let jobType = '';
   
-  // Parse location
   const locationText = $('div, span, p')
     .filter((_, el) => {
       const text = $(el).text().trim();
@@ -464,7 +427,6 @@ async function parseLocationAndDetails($: CheerioAPI, html: string): Promise<{ l
     location = locationText.split('•')[0].trim();
   }
   
-  // Look for specific location tags
   if (!location) {
     const locationMatches = [
       html.match(/<span[^>]*class="[^"]*location[^"]*"[^>]*>([\s\S]*?)<\/span>/i),
@@ -480,7 +442,6 @@ async function parseLocationAndDetails($: CheerioAPI, html: string): Promise<{ l
     }
   }
   
-  // Look for salary
   const salaryMatches = [
     html.match(/<span[^>]*class="[^"]*salary[^"]*"[^>]*>([\s\S]*?)<\/span>/i),
     html.match(/<div[^>]*class="[^"]*salary[^"]*"[^>]*>([\s\S]*?)<\/div>/i),
@@ -494,7 +455,6 @@ async function parseLocationAndDetails($: CheerioAPI, html: string): Promise<{ l
     }
   }
   
-  // Look for job type
   const typeMatches = [
     html.match(/<span[^>]*class="[^"]*job-type[^"]*"[^>]*>([\s\S]*?)<\/span>/i),
     html.match(/<div[^>]*class="[^"]*job-type[^"]*"[^>]*>([\s\S]*?)<\/div>/i),
@@ -535,7 +495,6 @@ async function parseDescription(_$: CheerioAPI, html: string): Promise<{ descrip
     }
   }
   
-  // Fallback to main content
   if (!longestDescription) {
     const mainContentMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
     if (mainContentMatch && mainContentMatch[1]) {
@@ -570,10 +529,9 @@ async function parseStructuredData(html: string): Promise<{
       const structuredData = JSON.parse(jsonContent);
       
       if (structuredData && structuredData['@type'] === 'JobPosting') {
-        // Extract job data from structured data
+
         const title = structuredData.title || '';
         
-        // Extract company
         let company = '';
         if (structuredData.hiringOrganization) {
           company = typeof structuredData.hiringOrganization === 'string' 
@@ -581,12 +539,10 @@ async function parseStructuredData(html: string): Promise<{
             : structuredData.hiringOrganization.name || '';
         }
         
-        // Extract description
         const description = typeof structuredData.description === 'string'
           ? structuredData.description
           : JSON.stringify(structuredData.description);
         
-        // Extract location
         let location = '';
         if (structuredData.jobLocation) {
           location = typeof structuredData.jobLocation === 'string'
@@ -598,7 +554,6 @@ async function parseStructuredData(html: string): Promise<{
               : '';
         }
         
-        // Extract salary
         let salary = '';
         if (structuredData.baseSalary) {
           salary = typeof structuredData.baseSalary === 'string'
@@ -608,7 +563,6 @@ async function parseStructuredData(html: string): Promise<{
               : '';
         }
         
-        // Extract other data
         const jobType = structuredData.employmentType || '';
         const postedDate = structuredData.datePosted || '';
         

@@ -176,7 +176,6 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
       jobDescription = parsedJobData.description;
     }
     
-    // Safe property access using type assertion or type guard for optional properties
     const parsedJobDataWithOptionals = parsedJobData as ParsedJobData;
     
     if (parsedJobDataWithOptionals.location) {
@@ -191,14 +190,13 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
       additionalInfo.push(`Job Type: ${parsedJobDataWithOptionals.jobType}`);
     }
     
-    // Clean up and final formatting
     if (jobTitle) {
       jobTitle = jobTitle
         .replace(/^RE:\s*/i, '')
         .replace(/^FWD:\s*/i, '')
         .replace(/hirejobs/gi, '')
         .replace(/^.*is\s+hiring\s+for\s*/i, '')
-        .replace(/\s*\|\s*.+$/i, '')  // Remove everything after a pipe symbol
+        .replace(/\s*\|\s*.+$/i, '')
         .replace(/^explore\s+tech\s+jobs\s+globally\s*/i, '')
         .trim();
     }
@@ -219,7 +217,6 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
       }
     }
     
-    // Apply default fallbacks if needed
     if (!jobTitle || jobTitle.length < 3 || jobTitle === 'Job Position') {
       jobTitle = `Position (ID: ${jobId})`;
     }

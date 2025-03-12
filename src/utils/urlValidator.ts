@@ -11,7 +11,6 @@ import { logger } from '../utils/logger';
 export async function validateUrlAccessibility(url: string): Promise<boolean> {
   logger.info(`Validating URL accessibility: ${url}`);
   
-  // Create a minimal crawler that just checks if the URL is accessible
   const crawler = new PlaywrightCrawler({
     headless: true,
     maxRequestsPerCrawl: 1,
@@ -21,10 +20,8 @@ export async function validateUrlAccessibility(url: string): Promise<boolean> {
     async requestHandler({ page, request, log }) {
       log.info(`Checking URL: ${request.url}`);
       
-      // Wait for just the basic HTML to load, don't wait for all resources
       await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
       
-      // Check if we have actual content or just a 404 page
       const title = await page.title();
       const statusCode = request.userData.statusCode || 200;
       const has404 = title.includes('404') || title.includes('Not Found');
@@ -35,10 +32,8 @@ export async function validateUrlAccessibility(url: string): Promise<boolean> {
       }
       
       log.info(`URL is valid and accessible: ${request.url}`);
-      // Don't return anything - void is expected
     },
     
-    // Handle pre-navigation hook to catch HTTP errors
     preNavigationHooks: [
       async (crawlingContext, gotoOptions) => {
         const { request } = crawlingContext;
@@ -52,17 +47,14 @@ export async function validateUrlAccessibility(url: string): Promise<boolean> {
       }
     ],
     
-    // Handle failed requests
     failedRequestHandler({ request, log }) {
       log.error(`URL validation failed: ${request.url}`);
-      // Don't return anything - void is expected
     },
   });
   
   try {
     let isValid = false;
     
-    // Run the crawler and capture the result
     await crawler.run([url])
       .then(() => {
         isValid = true;
