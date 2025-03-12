@@ -1,9 +1,16 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../utils/logger';
+import NodeCache from 'node-cache';
 
 const USE_MOCK_AI = process.env.MOCK_AI === 'true';
-
+const CACHE_TTL = parseInt(process.env.CACHE_TTL || '3600', 10);
 const apiKey = process.env.GEMINI_API_KEY || '';
+
+const messageCache = new NodeCache({
+  stdTTL: CACHE_TTL,
+  checkperiod: 120,
+  useClones: false
+});
 
 let genAI: GoogleGenerativeAI | null = null;
 
@@ -19,7 +26,31 @@ if (apiKey) {
 }
 
 /**
+ * Generate a cache key from job data
+ */
+function generateCacheKey(jobTitle: string, companyName: string, descriptionHash: string): string {
+  return `${jobTitle.toLowerCase().trim()}:${companyName.toLowerCase().trim()}:${descriptionHash}`;
+}
+
+/**
+ * Simple hash function for text
+ */
+function hashString(text: string): string {
+  let hash = 0;
+  if (text.length === 0) return hash.toString();
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  
+  return hash.toString();
+}
+
+/**
  * Generates a reference request message using Google Gemini API
+ * with caching to avoid redundant API calls
  * 
  * @param jobTitle The job title
  * @param companyName The company name
@@ -32,11 +63,26 @@ export async function generateReferenceMessage(
   jobDescription: string
 ): Promise<string> {
   try {
+    const descriptionPreview = jobDescription.slice(0, 1000);
+    const descriptionHash = hashString(descriptionPreview);
+    
+    const cacheKey = generateCacheKey(jobTitle, companyName, descriptionHash);
+    
+    const cachedMessage = messageCache.get<string>(cacheKey);
+    if (cachedMessage) {
+      logger.info(`Cache hit for: ${jobTitle} at ${companyName}`);
+      return cachedMessage;
+    }
+    
     logger.info(`Generating reference message for ${jobTitle} at ${companyName}`);
     
     if (USE_MOCK_AI || !genAI || !apiKey) {
       logger.info('Using mock AI response');
-      return generateMockReferenceMessage(jobTitle, companyName);
+      const mockMessage = generateMockReferenceMessage(jobTitle, companyName);
+      
+      messageCache.set(cacheKey, mockMessage);
+      
+      return mockMessage;
     }
     
     const prompt = createPrompt(jobTitle, companyName, jobDescription);
@@ -66,9 +112,11 @@ export async function generateReferenceMessage(
                         .replace(/as advertised on\s*\./, '')
                         .replace(/as posted on\s*\./, '')
                         .replace(/I hope this email finds you well\./g, '')
-                            .replace(/I hope this message finds you well\./g, '')
+                        .replace(/I hope this message finds you well\./g, '')
                         .replace(/\n\n\n+/g, '\n\n')
                         .trim();
+      
+      messageCache.set(cacheKey, cleanedText);
       
       return cleanedText;
     } catch (error) {
@@ -77,7 +125,11 @@ export async function generateReferenceMessage(
       
       if (process.env.NODE_ENV === 'development') {
         logger.info('Falling back to mock reference message due to API error');
-        return generateMockReferenceMessage(jobTitle, companyName);
+        const mockMessage = generateMockReferenceMessage(jobTitle, companyName);
+        
+        messageCache.set(cacheKey, mockMessage);
+        
+        return mockMessage;
       }
       
       throw new Error('Failed to generate reference message');
