@@ -9,13 +9,24 @@ const app = express();
 
 app.use(helmet());
 app.use(morgan('dev'));
-app.use(cors());
+const corsOptions = {
+  origin: process.env.FRONTEND_URL || '*',
+  methods: 'POST,GET,OPTIONS',
+  allowedHeaders: 'Content-Type,Authorization'
+};
+app.use(cors(corsOptions));
+
 app.use(express.json());
 
 app.use('/api/v1', referenceRoutes);
 
 app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
+  res.status(200).json({ 
+    status: 'ok',
+    version: process.env.npm_package_version || '1.0.0',
+    service: 'jobrefme-backend',
+    supportedSites: ['hirejobs.in']
+  });
 });
 
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
