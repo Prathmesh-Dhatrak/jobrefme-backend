@@ -41,54 +41,47 @@ export async function generateReferenceMessage(
     
     const prompt = createPrompt(jobTitle, companyName, jobDescription);
     
-    let models = [
-      'gemini-1.5-flash',
-      'gemini-1.0-pro',
-      'gemini-pro'
-    ];
+    const modelName = 'gemini-1.5-flash';
     
-    let lastError: Error | null = null;
-    
-    for (const modelName of models) {
-      try {
-        logger.info(`Trying model: ${modelName}`);
-        
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 800,
-          },
-        });
-        const result = await model.generateContent(prompt);
-        const response = result.response;
-        const text = response.text();
-        
-        logger.info(`Successfully generated reference message using ${modelName}`);
-        
-        let cleanedText = text.replace(/HireJobs/g, '')
-                            .replace(/hirejobs/gi, '')
-                            .replace(/as advertised on\s*\./, '')
-                            .replace(/as posted on\s*\./, '')
-                            .replace(/I hope this email finds you well\./g, '')
+    try {
+      logger.info(`Using model: ${modelName}`);
+      
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0.5,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 500,
+        },
+      });
+      const result = await model.generateContent(prompt);
+      const response = result.response;
+      const text = response.text();
+      
+      logger.info(`Successfully generated reference message using ${modelName}`);
+      
+      let cleanedText = text.replace(/HireJobs/g, '')
+                        .replace(/hirejobs/gi, '')
+                        .replace(/as advertised on\s*\./, '')
+                        .replace(/as posted on\s*\./, '')
+                        .replace(/I hope this email finds you well\./g, '')
                             .replace(/I hope this message finds you well\./g, '')
-                            .replace(/\n\n\n+/g, '\n\n')
-                            .trim();
-        
-        return cleanedText;
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logger.warn(`Error with model ${modelName}: ${errorMessage}`);
-        lastError = error instanceof Error ? error : new Error(errorMessage);
-        if (!errorMessage.includes('Not Found') && !errorMessage.includes('not found')) {
-          throw error;
-        }
-        
+                        .replace(/\n\n\n+/g, '\n\n')
+                        .trim();
+      
+      return cleanedText;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`Error with model ${modelName}: ${errorMessage}`);
+      
+      if (process.env.NODE_ENV === 'development') {
+        logger.info('Falling back to mock reference message due to API error');
+        return generateMockReferenceMessage(jobTitle, companyName);
       }
+      
+      throw new Error('Failed to generate reference message');
     }
-    throw lastError || new Error('All model attempts failed');
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

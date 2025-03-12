@@ -36,22 +36,12 @@ export async function scrapeJobPosting(jobUrl: string): Promise<JobData | null> 
         
         await page.waitForLoadState('domcontentloaded');
         
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         try {
-          await page.waitForSelector('.job-container, main, h1, article', { timeout: 5000 });
+          await page.waitForSelector('.job-container, main, h1, article', { timeout: 1000 });
         } catch (err) {
           log.info('Timed out waiting for job content selectors, continuing anyway');
-        }
-        
-        if (process.env.NODE_ENV === 'development') {
-          try {
-            await page.screenshot({ path: `screenshots/job-${new Date().getTime()}.png`, fullPage: true });
-            log.info('Screenshot saved to screenshots directory');
-          } catch (screenshotError) {
-            logger.error('Failed to take screenshot', 
-              screenshotError instanceof Error ? screenshotError : String(screenshotError));
-          }
         }
         
         jobData = await extractHireJobsData(page, request.url);
