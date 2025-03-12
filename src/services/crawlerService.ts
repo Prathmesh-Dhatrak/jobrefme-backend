@@ -6,6 +6,13 @@ import { parseHireJobsHTML } from '../utils/parser';
 
 const USE_MOCK_CRAWLER = process.env.MOCK_CRAWLER === 'true';
 
+interface ParsedJobData extends JobData {
+  location?: string;
+  salary?: string;
+  jobType?: string;
+  postedDate?: string;
+}
+
 /**
  * Specialized crawler for HireJobs.in job postings
  * 
@@ -36,10 +43,10 @@ export async function scrapeJobPosting(jobUrl: string): Promise<JobData | null> 
         
         await page.waitForLoadState('domcontentloaded');
         
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         try {
-          await page.waitForSelector('.job-container, main, h1, article', { timeout: 1000 });
+          await page.waitForSelector('.job-container, main, h1, article', { timeout: 800 });
         } catch (err) {
           log.info('Timed out waiting for job content selectors, continuing anyway');
         }
@@ -76,168 +83,115 @@ export async function scrapeJobPosting(jobUrl: string): Promise<JobData | null> 
 
 /**
  * Extract job data from HireJobs.in pages using multiple extraction methods
+ * with parallel processing where possible
  */
 async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
   try {
     const jobId = url.split('/').pop() || '';
     logger.info(`Extracting data for HireJobs job ID: ${jobId}`);
     
+    const html = await page.content();
+    
+    interface HiringInfo {
+      title: string;
+      company: string;
+    }
+
+    interface JobDetails {
+      metadata: string;
+      sections: Record<string, string>;
+      skills: string;
+    }
+    
+    const [
+      hiringInfo,
+      jobDetails,
+      parsedJobData
+    ] = await Promise.all([
+      extractHiringInfo(page).catch(error => {
+        logger.warn(`Hiring pattern extraction error: ${error instanceof Error ? error.message : String(error)}`);
+        return { title: '', company: '' } as HiringInfo;
+      }),
+      
+      extractJobDetails(page).catch(error => {
+        logger.warn(`Job details extraction error: ${error instanceof Error ? error.message : String(error)}`);
+        return { metadata: '', sections: {}, skills: '' } as JobDetails;
+      }),
+      
+      parseHireJobsHTML(html).catch(error => {
+        logger.warn(`HTML parser error: ${error instanceof Error ? error.message : String(error)}`);
+        return { 
+          title: 'Job Position', 
+          company: 'Company', 
+          description: '' 
+        } as ParsedJobData;
+      })
+    ]);
+    
     let jobTitle = '';
     let companyName = '';
     let jobDescription = '';
     let additionalInfo: string[] = [];
     
-    try {
-      const hiringInfo = await page.evaluate(() => {
-        const hiringElements = Array.from(document.querySelectorAll('h1, h2, h3, div'))
-          .filter(el => {
-            const text = el.textContent?.trim() || '';
-            return text.includes('is hiring for') && text.length < 150;
-          });
-          
-        if (hiringElements.length > 0) {
-          const hiringText = hiringElements[0].textContent?.trim() || '';
-          const parts = hiringText.split('is hiring for');
-          
-          if (parts.length >= 2) {
-            let title = parts[1].split('|')[0].trim();
-            let company = parts[0].trim();
-            
-            return { title, company };
-          }
-        }
-        
-        return { title: '', company: '' };
-      });
-      
-      if (hiringInfo.company) {
-        companyName = hiringInfo.company;
-        logger.info(`Found company name from hiring pattern: ${companyName}`);
-      }
-      
-      if (hiringInfo.title) {
-        jobTitle = hiringInfo.title;
-        logger.info(`Found job title from hiring pattern: ${jobTitle}`);
-      }
-    } catch (patternError) {
-      logger.warn(`Hiring pattern extraction error: ${patternError instanceof Error ? patternError.message : String(patternError)}`);
+    if (hiringInfo.company) {
+      companyName = hiringInfo.company;
     }
     
-    try {
-      const jobDetails = await page.evaluate(() => {
-        const metadataText = Array.from(document.querySelectorAll('div, span, p'))
-          .filter(el => {
-            const text = el.textContent?.trim() || '';
-            return (text.includes('•') && 
-                   (text.includes('LPA') || 
-                    text.includes('Fulltime') || 
-                    text.includes('years'))) && 
-                   text.length < 100;
-          })
-          .map(el => el.textContent?.trim() || '')
-          .filter(text => text.length > 0)[0] || '';
-          
-        const sections = ['Responsibilities', 'About the company', 'Requirements', 'Qualifications', 'Skills', 'Your competencies'];
-        const extractedSections: {[key: string]: string} = {};
-        
-        for (const section of sections) {
-          const sectionHeaders = Array.from(document.querySelectorAll('h2, h3, h4, strong, b'))
-            .filter(el => el.textContent?.includes(section));
-            
-          if (sectionHeaders.length > 0) {
-            let sectionContent = '';
-            let currentElement = sectionHeaders[0].nextElementSibling;
-            
-            while (currentElement && 
-                  !sections.some(s => currentElement?.textContent?.includes(s)) &&
-                  !(currentElement.tagName === 'H2' || 
-                    currentElement.tagName === 'H3' || 
-                    currentElement.tagName === 'H4')) {
-                      
-              const text = currentElement.textContent?.trim();
-              if (text) {
-                sectionContent += text + '\n';
-              }
-              currentElement = currentElement.nextElementSibling;
-            }
-            
-            if (sectionContent.trim()) {
-              extractedSections[section] = sectionContent.trim();
-            }
-          }
-        }
-        
-        const skillsSection = Array.from(document.querySelectorAll('div, section'))
-          .filter(el => el.textContent?.includes('Skills Required') || 
-                        el.textContent?.includes('Top Skills Required'))
-          .map(el => el.textContent?.trim() || '')
-          .filter(text => text.length > 0)[0] || '';
-          
-        return {
-          metadata: metadataText,
-          sections: extractedSections,
-          skills: skillsSection
-        };
-      });
-      
-      if (jobDetails.metadata) {
-        const metaParts = jobDetails.metadata.split('•').map(part => part.trim()).filter(part => part);
-        additionalInfo = [...additionalInfo, ...metaParts];
-      }
-      
-      if (jobDetails.sections && Object.keys(jobDetails.sections).length > 0) {
-        const descriptionParts = [];
-        
-        for (const [section, content] of Object.entries(jobDetails.sections)) {
-          if (content && content.trim()) {
-            descriptionParts.push(`${section}:\n${content}`);
-          }
-        }
-        
-        if (descriptionParts.length > 0) {
-          jobDescription = descriptionParts.join('\n\n');
-        }
-      }
-      
-      if (jobDetails.skills && !jobDescription.includes('Skills')) {
-        jobDescription = (jobDescription ? jobDescription + '\n\n' : '') + jobDetails.skills;
-      }
-    } catch (detailsError) {
-      logger.warn(`Job details extraction error: ${detailsError instanceof Error ? detailsError.message : String(detailsError)}`);
+    if (hiringInfo.title) {
+      jobTitle = hiringInfo.title;
     }
     
-
-    try {
-      const html = await page.content();
-      const parsedJobData = parseHireJobsHTML(html);
-      
-      if (!jobTitle || jobTitle === 'Job Position') {
-        jobTitle = parsedJobData.title;
-      }
-      
-      if (!companyName || companyName === 'Company on HireJobs' || companyName === 'Company on') {
-        companyName = parsedJobData.company;
-      }
-      
-      if (!jobDescription || jobDescription.length < 100) {
-        jobDescription = parsedJobData.description;
-      }
-      
-      if (parsedJobData.location) {
-        additionalInfo.push(`Location: ${parsedJobData.location}`);
-      }
-      
-      if (parsedJobData.salary) {
-        additionalInfo.push(`Salary: ${parsedJobData.salary}`);
-      }
-      
-      if (parsedJobData.jobType) {
-        additionalInfo.push(`Job Type: ${parsedJobData.jobType}`);
-      }
-    } catch (parserError) {
-      logger.warn(`HTML parser error: ${parserError instanceof Error ? parserError.message : String(parserError)}`);
+    if (jobDetails.metadata) {
+      const metaParts = jobDetails.metadata.split('•').map(part => part.trim()).filter(part => part);
+      additionalInfo = [...additionalInfo, ...metaParts];
     }
     
+    if (jobDetails.sections && Object.keys(jobDetails.sections).length > 0) {
+      const descriptionParts = [];
+      
+      for (const [section, content] of Object.entries(jobDetails.sections)) {
+        if (content && content.trim()) {
+          descriptionParts.push(`${section}:\n${content}`);
+        }
+      }
+      
+      if (descriptionParts.length > 0) {
+        jobDescription = descriptionParts.join('\n\n');
+      }
+    }
+    
+    if (jobDetails.skills && !jobDescription.includes('Skills')) {
+      jobDescription = (jobDescription ? jobDescription + '\n\n' : '') + jobDetails.skills;
+    }
+    
+    if (!jobTitle || jobTitle === 'Job Position') {
+      jobTitle = parsedJobData.title;
+    }
+    
+    if (!companyName || companyName === 'Company on HireJobs' || companyName === 'Company on') {
+      companyName = parsedJobData.company;
+    }
+    
+    if (!jobDescription || jobDescription.length < 100) {
+      jobDescription = parsedJobData.description;
+    }
+    
+    // Safe property access using type assertion or type guard for optional properties
+    const parsedJobDataWithOptionals = parsedJobData as ParsedJobData;
+    
+    if (parsedJobDataWithOptionals.location) {
+      additionalInfo.push(`Location: ${parsedJobDataWithOptionals.location}`);
+    }
+    
+    if (parsedJobDataWithOptionals.salary) {
+      additionalInfo.push(`Salary: ${parsedJobDataWithOptionals.salary}`);
+    }
+    
+    if (parsedJobDataWithOptionals.jobType) {
+      additionalInfo.push(`Job Type: ${parsedJobDataWithOptionals.jobType}`);
+    }
+    
+    // Clean up and final formatting
     if (jobTitle) {
       jobTitle = jobTitle
         .replace(/^RE:\s*/i, '')
@@ -265,6 +219,7 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
       }
     }
     
+    // Apply default fallbacks if needed
     if (!jobTitle || jobTitle.length < 3 || jobTitle === 'Job Position') {
       jobTitle = `Position (ID: ${jobId})`;
     }
@@ -306,10 +261,97 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
 }
 
 /**
+ * Extract hiring info from the page
+ */
+async function extractHiringInfo(page: Page): Promise<{ title: string; company: string }> {
+  return page.evaluate(() => {
+    const hiringElements = Array.from(document.querySelectorAll('h1, h2, h3, div'))
+      .filter(el => {
+        const text = el.textContent?.trim() || '';
+        return text.includes('is hiring for') && text.length < 150;
+      });
+      
+    if (hiringElements.length > 0) {
+      const hiringText = hiringElements[0].textContent?.trim() || '';
+      const parts = hiringText.split('is hiring for');
+      
+      if (parts.length >= 2) {
+        let title = parts[1].split('|')[0].trim();
+        let company = parts[0].trim();
+        
+        return { title, company };
+      }
+    }
+    
+    return { title: '', company: '' };
+  });
+}
+
+/**
+ * Extract job details from the page
+ */
+async function extractJobDetails(page: Page): Promise<{ metadata: string; sections: Record<string, string>; skills: string }> {
+  return page.evaluate(() => {
+    const metadataText = Array.from(document.querySelectorAll('div, span, p'))
+      .filter(el => {
+        const text = el.textContent?.trim() || '';
+        return (text.includes('•') && 
+               (text.includes('LPA') || 
+                text.includes('Fulltime') || 
+                text.includes('years'))) && 
+               text.length < 100;
+      })
+      .map(el => el.textContent?.trim() || '')
+      .filter(text => text.length > 0)[0] || '';
+      
+    const sections = ['Responsibilities', 'About the company', 'Requirements', 'Qualifications', 'Skills', 'Your competencies'];
+    const extractedSections: Record<string, string> = {};
+    
+    for (const section of sections) {
+      const sectionHeaders = Array.from(document.querySelectorAll('h2, h3, h4, strong, b'))
+        .filter(el => el.textContent?.includes(section));
+        
+      if (sectionHeaders.length > 0) {
+        let sectionContent = '';
+        let currentElement = sectionHeaders[0].nextElementSibling;
+        
+        while (currentElement && 
+              !sections.some(s => currentElement?.textContent?.includes(s)) &&
+              !(currentElement.tagName === 'H2' || 
+                currentElement.tagName === 'H3' || 
+                currentElement.tagName === 'H4')) {
+                  
+          const text = currentElement.textContent?.trim();
+          if (text) {
+            sectionContent += text + '\n';
+          }
+          currentElement = currentElement.nextElementSibling;
+        }
+        
+        if (sectionContent.trim()) {
+          extractedSections[section] = sectionContent.trim();
+        }
+      }
+    }
+    
+    const skillsSection = Array.from(document.querySelectorAll('div, section'))
+      .filter(el => el.textContent?.includes('Skills Required') || 
+                    el.textContent?.includes('Top Skills Required'))
+      .map(el => el.textContent?.trim() || '')
+      .filter(text => text.length > 0)[0] || '';
+      
+    return {
+      metadata: metadataText,
+      sections: extractedSections,
+      skills: skillsSection
+    };
+  });
+}
+
+/**
  * Generate realistic mock job data for development
  */
 function getMockJobData(_url: string): JobData {
-  
   return {
     title: `Software Engineer`,
     company: 'Tech Innovations',
