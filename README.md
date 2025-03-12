@@ -2,7 +2,7 @@
 
 A Node.js backend service that powers JobRefMe, an intelligent application that generates personalized job reference request messages based on job postings from HireJobs.in.
 
-[![Fly Deploy](https://github.com/yourusername/jobrefme-backend/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/yourusername/jobrefme-backend/actions/workflows/fly-deploy.yml)
+[![Fly Deploy](https://github.com/Prathmesh-Dhatrak/jobrefme-backend/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/Prathmesh-Dhatrak/jobrefme-backend/actions/workflows/fly-deploy.yml)
 
 ## 🚀 Features
 
