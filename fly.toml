@@ -17,7 +17,7 @@ primary_region = 'bom'
   processes = ['app']
 
 [[mounts]]
-  source = "jobrefme_data_1"
+  source = "jobrefme_data"
   destination = "/app/screenshots"
   processes = ["app"]
   
@@ -27,7 +27,7 @@ primary_region = 'bom'
   cpus = 1
   processes = ["app"]
   volumes = [
-    { source = "jobrefme_data_1", destination = "/app/screenshots" }
+    { source = "jobrefme_data", destination = "/app/screenshots" }
   ]
 
 [[vm]]
