@@ -123,19 +123,35 @@ ${jobDescription}
 ---
 
 INSTRUCTIONS:
-1. Create a professionally-worded message to ask for a reference for this specific job position.
-2. Format this as a DIRECT MESSAGE for social media platforms like LinkedIn, NOT as an email.
-3. DO NOT mention "HireJobs" or any job board website in your message.
-4. The tone should be respectful, concise, and focused on making a genuine connection.
-5. Mention the specific job title and company.
-6. Express genuine interest in the position and highlight 1-2 key qualifications from the job description.
-7. Ask for a reference in a way that makes it easy for the recipient to say yes.
-8. Keep the entire message under 150 words for easy readability on mobile devices.
-9. Do not include a greeting or sign-off that would be appropriate for email but not for a direct message.
-10. Do not fabricate personal information - leave placeholders like [YOUR NAME] instead.
-11. DO NOT include phrases like "I hope this email finds you well" or other email-specific language.
+1. Analyze the job description and identify key skills or qualifications needed for this position.
+2. Create a professionally-worded message in EXACTLY the following format:
 
-FORMAT YOUR RESPONSE AS A DIRECT REFERENCE REQUEST MESSAGE ONLY WITHOUT MENTIONING HIREJOBS OR ANY JOB BOARD.
+Applying for ${jobTitle} at ${companyName}
+
+Hey [RECIPIENT],
+
+I'm Prathmesh Dhatrak, a fullstack developer with expertise in [REPLACE WITH 3 RELEVANT SKILLS FROM JOB DESCRIPTION], and I'm reaching out about the ${jobTitle} role at ${companyName} ([JOB POST LINK]). Given your connection to the company, I wanted to ask if you would consider helping me with a referral.
+
+Work that I am most proud of:
+- At Copods, I built a comprehensive Candidate Evaluation and HR dashboard
+- InVideo (https://tinyurl.com/pd-ivsr): Engineered a user-friendly screen recording web app with React, TypeScript, and Rust-WASM, optimized with serverless AWS architecture
+
+Beyond professional experience, I've created engaging personal projects (Cinemagram, Friend-Zone) which are all deployed and available to view.
+
+My resume and portfolio provide further details:
+Resume: https://tinyurl.com/pd-ivrs
+Portfolio: prathmeshdhatrak.com
+
+Your time and consideration would mean a lot to me. Would you be open to referring me for this position?
+
+Thank you,
+Prathmesh Dhatrak
+
+3. IMPORTANT: The only part you should modify is the "[REPLACE WITH 3 RELEVANT SKILLS FROM JOB DESCRIPTION]" section, where you should list 3 key skills or technologies mentioned in the job description.
+4. DO NOT change any other placeholders or text in the template.
+5. DO NOT mention "HireJobs" or any job board website in your message.
+
+FORMAT YOUR RESPONSE EXACTLY AS THE TEMPLATE ABOVE WITH ONLY THE SKILLS SECTION CUSTOMIZED.
   `;
 }
 
@@ -143,13 +159,24 @@ FORMAT YOUR RESPONSE AS A DIRECT REFERENCE REQUEST MESSAGE ONLY WITHOUT MENTIONI
  * Generates a mock reference message for development
  */
 function generateMockReferenceMessage(jobTitle: string, companyName: string): string {
-  return `I'm reaching out about the ${jobTitle} position at ${companyName}. I believe your recommendation would greatly strengthen my application.
+  return `Applying for ${jobTitle} at ${companyName}
 
-This role aligns with my experience in software development and problem-solving skills that you've witnessed during our time working together. I'm particularly excited about this opportunity to leverage my technical expertise while contributing to innovative solutions.
+Hey [RECIPIENT],
 
-Would you be willing to provide a professional reference for me? The hiring team may contact you to discuss my qualifications and work style.
+I'm Prathmesh Dhatrak, a fullstack developer with expertise in JavaScript, TypeScript, and React, and I'm reaching out about the ${jobTitle} role at ${companyName} ([JOB POST LINK]). Given your connection to the company, I wanted to ask if you would consider helping me with a referral.
 
-Please let me know if you need any additional information. I value our professional relationship and appreciate your consideration.
+Work that I am most proud of:
+- At Copods, I built a comprehensive Candidate Evaluation and HR dashboard
+- InVideo (https://tinyurl.com/pd-ivsr): Engineered a user-friendly screen recording web app with React, TypeScript, and Rust-WASM, optimized with serverless AWS architecture
 
-[YOUR NAME]`;
+Beyond professional experience, I've created engaging personal projects (Cinemagram, Friend-Zone) which are all deployed and available to view.
+
+My resume and portfolio provide further details:
+Resume: https://tinyurl.com/pd-ivrs
+Portfolio: prathmeshdhatrak.com
+
+Your time and consideration would mean a lot to me. Would you be open to referring me for this position?
+
+Thank you,
+Prathmesh Dhatrak`;
 }

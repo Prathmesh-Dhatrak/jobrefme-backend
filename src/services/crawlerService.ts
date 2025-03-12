@@ -2,7 +2,7 @@ import { PlaywrightCrawler } from 'crawlee';
 import { Page } from 'playwright';
 import { logger } from '../utils/logger';
 import { JobData } from '../types/types';
-import { parseHireJobsHTML } from '../utils/hirejobs-parser';
+import { parseHireJobsHTML } from '../utils/parser';
 
 const USE_MOCK_CRAWLER = process.env.MOCK_CRAWLER === 'true';
 
@@ -95,168 +95,204 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
     let jobTitle = '';
     let companyName = '';
     let jobDescription = '';
+    let additionalInfo: string[] = [];
     
     try {
-      const pageTitle = await page.title();
-      if (pageTitle && !pageTitle.includes('404') && !pageTitle.includes('Error')) {
-        const titleParts = pageTitle.split(/\s*\|\s*/)[0].trim();
-        const atIndex = titleParts.indexOf(' at ');
-        
-        if (atIndex > 0) {
-          jobTitle = titleParts.substring(0, atIndex).trim();
-          companyName = titleParts.substring(atIndex + 4).trim();
-          logger.info(`Extracted from page title - Title: ${jobTitle}, Company: ${companyName}`);
+      const hiringInfo = await page.evaluate(() => {
+        const hiringElements = Array.from(document.querySelectorAll('h1, h2, h3, div'))
+          .filter(el => {
+            const text = el.textContent?.trim() || '';
+            return text.includes('is hiring for') && text.length < 150;
+          });
+          
+        if (hiringElements.length > 0) {
+          const hiringText = hiringElements[0].textContent?.trim() || '';
+          const parts = hiringText.split('is hiring for');
+          
+          if (parts.length >= 2) {
+            let title = parts[1].split('|')[0].trim();
+            let company = parts[0].trim();
+            
+            return { title, company };
+          }
         }
+        
+        return { title: '', company: '' };
+      });
+      
+      if (hiringInfo.company) {
+        companyName = hiringInfo.company;
+        logger.info(`Found company name from hiring pattern: ${companyName}`);
       }
-    } catch (titleError) {
-      logger.warn(`Title extraction error: ${titleError instanceof Error ? titleError.message : String(titleError)}`);
+      
+      if (hiringInfo.title) {
+        jobTitle = hiringInfo.title;
+        logger.info(`Found job title from hiring pattern: ${jobTitle}`);
+      }
+    } catch (patternError) {
+      logger.warn(`Hiring pattern extraction error: ${patternError instanceof Error ? patternError.message : String(patternError)}`);
     }
     
     try {
-      const dynamicSelectors = await page.evaluate(() => {
-        const headings = Array.from(document.querySelectorAll('h1, h2'));
-        const companyElements = Array.from(document.querySelectorAll(
-          '.company, .company-name, .org, .organization, .employer, [itemprop="hiringOrganization"]'
-        ));
+      const jobDetails = await page.evaluate(() => {
+        const metadataText = Array.from(document.querySelectorAll('div, span, p'))
+          .filter(el => {
+            const text = el.textContent?.trim() || '';
+            return (text.includes('•') && 
+                   (text.includes('LPA') || 
+                    text.includes('Fulltime') || 
+                    text.includes('years'))) && 
+                   text.length < 100;
+          })
+          .map(el => el.textContent?.trim() || '')
+          .filter(text => text.length > 0)[0] || '';
+          
+        const sections = ['Responsibilities', 'About the company', 'Requirements', 'Qualifications', 'Skills', 'Your competencies'];
+        const extractedSections: {[key: string]: string} = {};
         
-        const descriptionElements = Array.from(document.querySelectorAll(
-          '.description, .job-description, .details, .job-details, article, main, .content'
-        ));
-        
-        let possibleTitles = [];
-        for (const heading of headings) {
-          if (heading.textContent) {
-            possibleTitles.push(heading.textContent.trim());
+        for (const section of sections) {
+          const sectionHeaders = Array.from(document.querySelectorAll('h2, h3, h4, strong, b'))
+            .filter(el => el.textContent?.includes(section));
+            
+          if (sectionHeaders.length > 0) {
+            let sectionContent = '';
+            let currentElement = sectionHeaders[0].nextElementSibling;
+            
+            while (currentElement && 
+                  !sections.some(s => currentElement?.textContent?.includes(s)) &&
+                  !(currentElement.tagName === 'H2' || 
+                    currentElement.tagName === 'H3' || 
+                    currentElement.tagName === 'H4')) {
+                      
+              const text = currentElement.textContent?.trim();
+              if (text) {
+                sectionContent += text + '\n';
+              }
+              currentElement = currentElement.nextElementSibling;
+            }
+            
+            if (sectionContent.trim()) {
+              extractedSections[section] = sectionContent.trim();
+            }
           }
         }
         
-        let possibleCompanies = [];
-        for (const company of companyElements) {
-          if (company.textContent) {
-            possibleCompanies.push(company.textContent.trim());
-          }
-        }
-        
-        let possibleDescriptions = [];
-        for (const desc of descriptionElements) {
-          if (desc.textContent) {
-            possibleDescriptions.push(desc.textContent.trim());
-          }
-        }
-        
+        const skillsSection = Array.from(document.querySelectorAll('div, section'))
+          .filter(el => el.textContent?.includes('Skills Required') || 
+                        el.textContent?.includes('Top Skills Required'))
+          .map(el => el.textContent?.trim() || '')
+          .filter(text => text.length > 0)[0] || '';
+          
         return {
-          titles: possibleTitles,
-          companies: possibleCompanies,
-          descriptions: possibleDescriptions
+          metadata: metadataText,
+          sections: extractedSections,
+          skills: skillsSection
         };
       });
       
-      if (dynamicSelectors.titles && dynamicSelectors.titles.length > 0) {
-        const validTitles = dynamicSelectors.titles
-          .filter(t => t.length > 3 && t.length < 100)
-          .filter(t => !t.includes('HireJobs') && !t.includes('404'))
-          .sort((a, b) => b.length - a.length);
+      if (jobDetails.metadata) {
+        const metaParts = jobDetails.metadata.split('•').map(part => part.trim()).filter(part => part);
+        additionalInfo = [...additionalInfo, ...metaParts];
+      }
+      
+      if (jobDetails.sections && Object.keys(jobDetails.sections).length > 0) {
+        const descriptionParts = [];
         
-        if (validTitles.length > 0) {
-          if (!jobTitle) jobTitle = validTitles[0];
-          logger.info(`Found job title from DOM: ${jobTitle}`);
+        for (const [section, content] of Object.entries(jobDetails.sections)) {
+          if (content && content.trim()) {
+            descriptionParts.push(`${section}:\n${content}`);
+          }
+        }
+        
+        if (descriptionParts.length > 0) {
+          jobDescription = descriptionParts.join('\n\n');
         }
       }
       
-      if (dynamicSelectors.companies && dynamicSelectors.companies.length > 0) {
-        const validCompanies = dynamicSelectors.companies
-          .filter(c => c.length > 2 && c.length < 50)
-          .filter(c => !c.includes('HireJobs') && !c.includes('404'))
-          .sort((a, b) => b.length - a.length);
-        
-        if (validCompanies.length > 0) {
-          if (!companyName) companyName = validCompanies[0];
-          logger.info(`Found company name from DOM: ${companyName}`);
-        }
+      if (jobDetails.skills && !jobDescription.includes('Skills')) {
+        jobDescription = (jobDescription ? jobDescription + '\n\n' : '') + jobDetails.skills;
       }
-      
-      if (dynamicSelectors.descriptions && dynamicSelectors.descriptions.length > 0) {
-        const validDescriptions = dynamicSelectors.descriptions
-          .filter(d => d.length > 50)
-          .sort((a, b) => b.length - a.length);
-        
-        if (validDescriptions.length > 0) {
-          jobDescription = validDescriptions[0];
-          logger.info(`Found job description from DOM: ${jobDescription.substring(0, 50)}...`);
-        }
-      }
-    } catch (domError) {
-      logger.warn(`DOM extraction error: ${domError instanceof Error ? domError.message : String(domError)}`);
+    } catch (detailsError) {
+      logger.warn(`Job details extraction error: ${detailsError instanceof Error ? detailsError.message : String(detailsError)}`);
     }
     
+
     try {
       const html = await page.content();
       const parsedJobData = parseHireJobsHTML(html);
       
-      if (!jobTitle || (parsedJobData.title !== 'Job Position' && 
-                        parsedJobData.title.length > jobTitle.length)) {
+      if (!jobTitle || jobTitle === 'Job Position') {
         jobTitle = parsedJobData.title;
       }
       
-      if (!companyName || (parsedJobData.company !== 'Company on HireJobs' && 
-                          parsedJobData.company.length > companyName.length)) {
+      if (!companyName || companyName === 'Company on HireJobs' || companyName === 'Company on') {
         companyName = parsedJobData.company;
       }
-
-      if (!jobDescription || parsedJobData.description.length > jobDescription.length) {
+      
+      if (!jobDescription || jobDescription.length < 100) {
         jobDescription = parsedJobData.description;
       }
       
-      if (parsedJobData.location || parsedJobData.salary) {
-        const additionalInfo = [];
-        if (parsedJobData.location) additionalInfo.push(`Location: ${parsedJobData.location}`);
-        if (parsedJobData.salary) additionalInfo.push(`Salary: ${parsedJobData.salary}`);
-        if (parsedJobData.jobType) additionalInfo.push(`Job Type: ${parsedJobData.jobType}`);
-        
-        if (additionalInfo.length > 0 && jobDescription) {
-          jobDescription += '\n\nAdditional Information:\n' + additionalInfo.join('\n');
-        }
+      if (parsedJobData.location) {
+        additionalInfo.push(`Location: ${parsedJobData.location}`);
       }
       
-      logger.info(`Combined extraction results - Title: ${jobTitle}, Company: ${companyName}, Description length: ${jobDescription.length} chars`);
+      if (parsedJobData.salary) {
+        additionalInfo.push(`Salary: ${parsedJobData.salary}`);
+      }
+      
+      if (parsedJobData.jobType) {
+        additionalInfo.push(`Job Type: ${parsedJobData.jobType}`);
+      }
     } catch (parserError) {
       logger.warn(`HTML parser error: ${parserError instanceof Error ? parserError.message : String(parserError)}`);
     }
     
-    if (!jobTitle || !companyName || !jobDescription) {
-      try {
-        const metaData = await page.evaluate(() => {
-          const metaTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content') || '';
-          const metaDesc = document.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
-          return { title: metaTitle, description: metaDesc };
-        });
-        
-        if (metaData.title && !jobTitle) {
-          const metaTitleParts = metaData.title.split(' at ');
-          if (metaTitleParts.length > 1) {
-            jobTitle = metaTitleParts[0].trim();
-            if (!companyName) companyName = metaTitleParts[1].trim();
-          } else {
-            jobTitle = metaData.title;
-          }
-        }
-        
-        if (metaData.description && !jobDescription) {
-          jobDescription = metaData.description;
-        }
-      } catch (metaError) {
-        logger.warn(`Meta tag extraction error: ${metaError instanceof Error ? metaError.message : String(metaError)}`);
+    if (jobTitle) {
+      jobTitle = jobTitle
+        .replace(/^RE:\s*/i, '')
+        .replace(/^FWD:\s*/i, '')
+        .replace(/hirejobs/gi, '')
+        .replace(/^.*is\s+hiring\s+for\s*/i, '')
+        .replace(/\s*\|\s*.+$/i, '')  // Remove everything after a pipe symbol
+        .replace(/^explore\s+tech\s+jobs\s+globally\s*/i, '')
+        .trim();
+    }
+    
+    if (companyName) {
+      companyName = companyName
+        .replace(/hirejobs/gi, '')
+        .replace(/^\s*at\s+/i, '')
+        .replace(/^\s*is\s+/i, '')
+        .replace(/company\s+on\s*$/i, '')
+        .trim();
+    }
+    
+    if (additionalInfo.length > 0) {
+      const uniqueInfo = [...new Set(additionalInfo)];
+      if (!jobDescription.includes('Additional Information')) {
+        jobDescription += '\n\nAdditional Information:\n' + uniqueInfo.join('\n');
       }
     }
     
-    if (!jobTitle) jobTitle = `Job Position (ID: ${jobId})`;
-    if (!companyName) companyName = 'the company';
-    if (!jobDescription || jobDescription.length < 50) {
-      jobDescription = `This is a job posting with ID ${jobId}. Unfortunately, we couldn't extract detailed job description. The position appears to be for ${jobTitle} at ${companyName}.`;
+    if (!jobTitle || jobTitle.length < 3 || jobTitle === 'Job Position') {
+      jobTitle = `Position (ID: ${jobId})`;
     }
     
-    jobTitle = jobTitle.replace(/^RE:\s*/i, '').replace(/^FWD:\s*/i, '');
-    companyName = companyName.replace('HireJobs', '').replace(/^\s*at\s+/i, '').trim();
+    if (!companyName || companyName.length < 2 || companyName === 'Company on') {
+      companyName = `Company (ID: ${jobId})`;
+    }
+    
+    if (!jobDescription || jobDescription.length < 100) {
+      if (process.env.NODE_ENV === 'development') {
+        const mockData = getMockJobData(url);
+        jobDescription = mockData.description;
+      } else {
+        jobDescription = `This is a job posting for ${jobTitle} at ${companyName}. Unfortunately, detailed job description could not be extracted.`;
+      }
+    }
+    
+    logger.info(`Final extracted data - Title: ${jobTitle}, Company: ${companyName}, Description length: ${jobDescription.length} chars`);
     
     return {
       title: jobTitle,
@@ -267,9 +303,13 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`Error extracting HireJobs data: ${errorMessage}`);
     
+    if (process.env.NODE_ENV === 'development') {
+      return getMockJobData(url);
+    }
+    
     return {
       title: 'Job Position',
-      company: 'the company',
+      company: 'Company',
       description: 'Failed to extract job description. Please check the original posting.'
     };
   }

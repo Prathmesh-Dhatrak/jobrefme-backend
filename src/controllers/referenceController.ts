@@ -19,30 +19,33 @@ export async function generateReference(req: Request, res: Response, next: NextF
       throw new ApiError(422, 'Could not extract job details from HireJobs');
     }
     
-    const enhancedJobData = {
-      title: jobData.title && jobData.title !== 'Job Position' 
-             ? jobData.title 
-             : `Position at ${jobData.company !== 'Company on HireJobs' ? jobData.company : 'the company'}`,
-      company: jobData.company && jobData.company !== 'Company on HireJobs' 
-               ? jobData.company 
-               : 'the company',
-      description: jobData.description
-    };
+    let jobTitle = jobData.title.trim();
+    let companyName = jobData.company.trim();
     
-    logger.info(`Enhanced job data: ${enhancedJobData.title} at ${enhancedJobData.company}`);
+    if (jobTitle.includes(' at ')) {
+      const titleParts = jobTitle.split(' at ');
+      jobTitle = titleParts[0].trim();
+      if (!companyName || companyName === 'the company') {
+        companyName = titleParts[1].trim();
+      }
+    }
+    
+    if (companyName === 'Company on') {
+      companyName = 'Company';
+    }
     
     const referenceMessage = await generateReferenceMessage(
-      enhancedJobData.title,
-      enhancedJobData.company,
-      enhancedJobData.description
+      jobTitle,
+      companyName,
+      jobData.description
     );
     
     res.status(200).json({
       success: true,
       referenceMessage,
-      jobTitle: enhancedJobData.title,
-      companyName: enhancedJobData.company,
-      jobId: jobId
+      jobTitle,
+      companyName,
+      jobId
     });
     
   } catch (error) {
