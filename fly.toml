@@ -1,0 +1,40 @@
+# fly.toml app configuration file generated for jobrefme-backend on 2025-03-12T17:07:30+05:30
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'jobrefme-backend'
+primary_region = 'bom'
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[mounts]]
+  source = "jobrefme_data_1"
+  destination = "/app/screenshots"
+  processes = ["app"]
+  
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+  processes = ["app"]
+  volumes = [
+    { source = "jobrefme_data_1", destination = "/app/screenshots" }
+  ]
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
+  processes = ["app"]
+  volumes = [
+    { source = "jobrefme_data_2", destination = "/app/screenshots" }
+  ]

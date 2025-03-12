@@ -1,0 +1,30 @@
+# flyctl launch added from .gitignore
+# Dependencies
+**/node_modules
+
+# Build output
+**/dist
+
+# Logs
+**/logs
+**/*.log
+**/npm-debug.log*
+
+# Environment variables
+**/.env
+
+# IDE files
+**/.vscode
+**/.idea
+**/*.sublime-*
+
+# OS files
+**/.DS_Store
+**/Thumbs.db
+
+# flyctl launch added from node_modules/robots-parser/.gitignore
+node_modules/robots-parser/**/node_modules
+node_modules/robots-parser/**/coverage
+node_modules/robots-parser/**/.nyc_output
+node_modules/robots-parser/**/.vscode
+fly.toml
