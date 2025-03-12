@@ -1,4 +1,5 @@
 import { logger } from './logger';
+import { load } from 'cheerio';
 
 interface ParsedJobData {
   title: string;
@@ -11,19 +12,147 @@ interface ParsedJobData {
 }
 
 /**
+ * Clean text content by removing extra whitespace and unwanted text
+ */
+export function cleanText(text: string): string {
+  return text
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Specialized parser for HireJobs HTML content
- * This extracts job data from the HireJobs HTML structure
+ * 
+ * @param html Raw HTML content from the job posting page
+ * @returns Structured job data
  */
 export function parseHireJobsHTML(html: string): ParsedJobData {
   logger.info('Parsing HireJobs HTML content');
   
   const result: ParsedJobData = {
     title: 'Job Position',
-    company: 'Company on HireJobs',
+    company: 'Company',
     description: '',
   };
   
   try {
+    const $ = load(html);
+    const hiringText = $('h1, h2, h3, div, p')
+      .filter((_, el) => $(el).text().includes('is hiring for'))
+      .first()
+      .text()
+      .trim();
+    
+    if (hiringText && hiringText.includes('is hiring for')) {
+      const parts = hiringText.split('is hiring for');
+      if (parts.length >= 2) {
+        result.company = parts[0].trim();
+        const titlePart = parts[1].split('|')[0].trim();
+        result.title = titlePart;
+        logger.info(`Parsed from hiring pattern: Company: ${result.company}, Title: ${result.title}`);
+      }
+    }
+    
+    const metaText = $('div, span, p')
+      .filter((_, el) => {
+        const text = $(el).text().trim();
+        return text.includes('Fulltime') || 
+               text.includes('Part-time') || 
+               text.includes('LPA') ||
+               text.includes('years');
+      })
+      .first()
+      .text()
+      .trim();
+    
+    if (metaText) {
+      const metaParts = metaText.split('•').map(part => part.trim());
+      
+      metaParts.forEach(part => {
+        if (part.includes('Fulltime') || part.includes('Part-time') || part.includes('Contract')) {
+          result.jobType = part;
+        } else if (part.includes('LPA') || part.includes('salary')) {
+          result.salary = part;
+        } else if (part.includes('years')) {
+          // This is likely experience requirement
+          if (!result.description.includes('Experience')) {
+            result.description += `Experience Required: ${part}\n\n`;
+          }
+        }
+      });
+      
+      logger.info(`Parsed metadata: JobType: ${result.jobType}, Salary: ${result.salary}`);
+    }
+
+    const locationText = $('div, span, p')
+      .filter((_, el) => {
+        const text = $(el).text().trim();
+        return text.includes('India') || 
+              text.includes('Remote') || 
+              text.includes('Location');
+      })
+      .first()
+      .text()
+      .trim();
+    
+    if (locationText) {
+      result.location = locationText.split('•')[0].trim();
+      logger.info(`Parsed location: ${result.location}`);
+    }
+    
+    const sections = ['Responsibilities', 'Requirements', 'Qualifications', 'About the company', 'Skills'];
+    let sectionContents: {[key: string]: string} = {};
+    
+    sections.forEach(section => {
+      $('h2, h3, h4, strong, b').filter((_, el) => {
+        return $(el).text().trim().includes(section);
+      }).each((_, el) => {
+        let sectionContent = '';
+        let nextEl = $(el).next();
+
+        while (nextEl.length && 
+               !sections.some(s => nextEl.text().includes(s)) &&
+               !nextEl.is('h2') && 
+               !nextEl.is('h3') && 
+               !nextEl.is('h4')) {
+          
+          const text = nextEl.text().trim();
+          if (text) {
+            sectionContent += text + '\n';
+          }
+          nextEl = nextEl.next();
+        }
+        
+        if (sectionContent.trim()) {
+          sectionContents[section] = sectionContent.trim();
+        }
+      });
+    });
+    
+    if (Object.keys(sectionContents).length > 0) {
+      let descriptionParts = [];
+      for (const [section, content] of Object.entries(sectionContents)) {
+        descriptionParts.push(`${section}:\n${content}`);
+      }
+      
+      result.description = descriptionParts.join('\n\n');
+      logger.info(`Built description from ${Object.keys(sectionContents).length} sections`);
+    }
+    
+    const skillsList = $('ul, ol').filter((_, el) => {
+      return $(el).text().includes('Skills Required') || 
+             $(el).prev().text().includes('Skills');
+    }).first();
+    
+    if (skillsList.length) {
+      const skills = skillsList.find('li').map((_, el) => $(el).text().trim()).get();
+      if (skills.length > 0) {
+        if (!result.description.includes('Skills')) {
+          result.description += '\n\nSkills Required:\n' + skills.join('\n');
+        }
+      }
+    }
+    
     const titleMatch = html.match(/<title>(.*?)\s*\|\s*HireJobs<\/title>/i);
     if (titleMatch && titleMatch[1]) {
       const titleParts = titleMatch[1].split(' at ');
