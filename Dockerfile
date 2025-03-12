@@ -29,13 +29,17 @@ WORKDIR /app
 
 # Copy package.json files and install dependencies
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # Copy source code
 COPY . .
 
 # Build the application
 RUN npm run build
+
+# Install Playwright browsers
+RUN npx playwright install --with-deps chromium
+RUN npx playwright install-deps chromium
 
 # Create directory for screenshots
 RUN mkdir -p screenshots
