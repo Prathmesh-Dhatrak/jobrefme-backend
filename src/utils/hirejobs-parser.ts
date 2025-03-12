@@ -24,12 +24,8 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
   };
   
   try {
-    // Try multiple approaches to extract the job title
-    
-    // 1. From document title
     const titleMatch = html.match(/<title>(.*?)\s*\|\s*HireJobs<\/title>/i);
     if (titleMatch && titleMatch[1]) {
-      // Try to split it if it contains "at" to separate title from company
       const titleParts = titleMatch[1].split(' at ');
       if (titleParts.length > 1) {
         result.title = titleParts[0].trim();
@@ -39,7 +35,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       }
     }
     
-    // 2. From Open Graph meta tags
     const ogTitleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i);
     if (ogTitleMatch && ogTitleMatch[1]) {
       const ogTitle = ogTitleMatch[1].trim();
@@ -58,7 +53,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       }
     }
     
-    // 3. Look for structured data (JSON-LD)
     let structuredDataMatches = html.match(/<script\s+type="application\/ld\+json">([\s\S]*?)<\/script>/ig);
     if (structuredDataMatches) {
       for (const jsonLdString of structuredDataMatches) {
@@ -67,7 +61,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
                                          .replace(/<\/script>/i, '');
           const structuredData = JSON.parse(jsonContent);
           
-          // If it's a JobPosting type
           if (structuredData && structuredData['@type'] === 'JobPosting') {
             if (structuredData.title && (!result.title || result.title === 'Job Position')) {
               result.title = structuredData.title;
@@ -89,7 +82,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
                 : JSON.stringify(structuredData.description);
             }
             
-            // Extract additional data
             if (structuredData.jobLocation) {
               const location = typeof structuredData.jobLocation === 'string'
                 ? structuredData.jobLocation
@@ -125,8 +117,7 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
         }
       }
     }
-    
-    // 4. Look for H1/H2 headings for job title
+
     if (!result.title || result.title === 'Job Position') {
       const h1Matches = html.match(/<h1[^>]*>(.*?)<\/h1>/gi);
       if (h1Matches) {
@@ -141,7 +132,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
         }
       }
       
-      // If still no title, try H2
       if (result.title === 'Job Position') {
         const h2Matches = html.match(/<h2[^>]*>(.*?)<\/h2>/gi);
         if (h2Matches) {
@@ -158,7 +148,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       }
     }
     
-    // 5. Look for company name in specific elements
     if (!result.company || result.company === 'Company on HireJobs') {
       const companyMatches = [
         html.match(/<div[^>]*class="[^"]*company-name[^"]*"[^>]*>([\s\S]*?)<\/div>/i),
@@ -176,7 +165,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       }
     }
     
-    // 6. Extract job description from multiple possible elements
     if (!result.description) {
       const descriptionMatches = [
         html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i),
@@ -187,7 +175,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
         html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)
       ];
       
-      // Try each match and use the longest valid content
       let longestDescription = '';
       for (const match of descriptionMatches) {
         if (match && match[1] && match[1].trim().length > 50) {
@@ -201,7 +188,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       if (longestDescription) {
         result.description = longestDescription;
       } else {
-        // If no specific description elements found, try the main content area
         const mainContentMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
         if (mainContentMatch && mainContentMatch[1]) {
           result.description = cleanHtmlContent(mainContentMatch[1]);
@@ -209,7 +195,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       }
     }
     
-    // 7. Extract additional metadata if present
     if (!result.location) {
       const locationMatches = [
         html.match(/<span[^>]*class="[^"]*location[^"]*"[^>]*>([\s\S]*?)<\/span>/i),
@@ -256,8 +241,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       }
     }
     
-    // Final cleanup
-    // Remove "HireJobs" or generic text from any fields
     if (result.title) {
       result.title = result.title.replace(/hirejobs/gi, '').trim();
       if (result.title === '' || result.title.toLowerCase() === 'job details') {
@@ -272,7 +255,6 @@ export function parseHireJobsHTML(html: string): ParsedJobData {
       }
     }
     
-    // Make sure description isn't just boilerplate text
     if (result.description && result.description.length < 50) {
       result.description = '';
     }

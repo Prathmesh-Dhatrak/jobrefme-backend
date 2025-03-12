@@ -1,13 +1,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../utils/logger';
 
-// Check if we're using mock mode
 const USE_MOCK_AI = process.env.MOCK_AI === 'true';
 
-// Get API key safely
 const apiKey = process.env.GEMINI_API_KEY || '';
 
-// Initialize Google Generative AI with API key if available
 let genAI: GoogleGenerativeAI | null = null;
 
 if (apiKey) {
@@ -37,30 +34,25 @@ export async function generateReferenceMessage(
   try {
     logger.info(`Generating reference message for ${jobTitle} at ${companyName}`);
     
-    // Use mock message if in mock mode or no API key
     if (USE_MOCK_AI || !genAI || !apiKey) {
       logger.info('Using mock AI response');
       return generateMockReferenceMessage(jobTitle, companyName);
     }
     
-    // Create the prompt using the template
     const prompt = createPrompt(jobTitle, companyName, jobDescription);
     
-    // Try different model names
     let models = [
-      'gemini-1.5-flash',    // Most recent
-      'gemini-1.0-pro',      // Previous version
-      'gemini-pro'           // Original name
+      'gemini-1.5-flash',
+      'gemini-1.0-pro',
+      'gemini-pro'
     ];
     
     let lastError: Error | null = null;
     
-    // Try each model until one works
     for (const modelName of models) {
       try {
         logger.info(`Trying model: ${modelName}`);
         
-        // Get the Gemini model
         const model = genAI.getGenerativeModel({
           model: modelName,
           generationConfig: {
@@ -70,22 +62,19 @@ export async function generateReferenceMessage(
             maxOutputTokens: 800,
           },
         });
-        
-        // Generate content
         const result = await model.generateContent(prompt);
         const response = result.response;
         const text = response.text();
         
         logger.info(`Successfully generated reference message using ${modelName}`);
         
-        // Make sure we don't have any mentions of HireJobs
         let cleanedText = text.replace(/HireJobs/g, '')
                             .replace(/hirejobs/gi, '')
                             .replace(/as advertised on\s*\./, '')
                             .replace(/as posted on\s*\./, '')
                             .replace(/I hope this email finds you well\./g, '')
                             .replace(/I hope this message finds you well\./g, '')
-                            .replace(/\n\n\n+/g, '\n\n') // Remove excessive newlines
+                            .replace(/\n\n\n+/g, '\n\n')
                             .trim();
         
         return cleanedText;
@@ -93,24 +82,18 @@ export async function generateReferenceMessage(
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.warn(`Error with model ${modelName}: ${errorMessage}`);
         lastError = error instanceof Error ? error : new Error(errorMessage);
-        
-        // If this error is not about the model not being found, break the loop
         if (!errorMessage.includes('Not Found') && !errorMessage.includes('not found')) {
           throw error;
         }
         
-        // Continue trying other models
       }
     }
-    
-    // If we've tried all models and failed, throw the last error
     throw lastError || new Error('All model attempts failed');
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`Error generating reference message with AI: ${errorMessage}`);
     
-    // Fall back to mock data if in development
     if (process.env.NODE_ENV === 'development') {
       logger.info('Falling back to mock reference message due to API error');
       return generateMockReferenceMessage(jobTitle, companyName);

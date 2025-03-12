@@ -10,18 +10,15 @@ export async function generateReference(req: Request, res: Response, next: NextF
     
     logger.info(`Processing reference request for HireJobs URL: ${jobUrl}`);
     
-    // Extract job ID for logging and potential caching
     const jobId = extractJobId(jobUrl);
     logger.info(`Job ID: ${jobId}`);
     
-    // Scrape the HireJobs posting
     const jobData = await scrapeJobPosting(jobUrl);
     
     if (!jobData) {
       throw new ApiError(422, 'Could not extract job details from HireJobs');
     }
     
-    // Enhance job data with meaningful fallbacks if needed
     const enhancedJobData = {
       title: jobData.title && jobData.title !== 'Job Position' 
              ? jobData.title 
@@ -34,7 +31,6 @@ export async function generateReference(req: Request, res: Response, next: NextF
     
     logger.info(`Enhanced job data: ${enhancedJobData.title} at ${enhancedJobData.company}`);
     
-    // Generate the reference message
     const referenceMessage = await generateReferenceMessage(
       enhancedJobData.title,
       enhancedJobData.company,

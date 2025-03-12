@@ -39,16 +39,12 @@ export function isValidUrl(url: string): boolean {
 }
 
 /**
- * Checks if URL is from HireJobs.in
+ * Checks if URL valid
  */
 export function isHireJobsUrl(url: string): boolean {
   try {
     const { hostname, pathname } = new URL(url);
-    
-    // Check if hostname is hirejobs.in or www.hirejobs.in
     const isHireJobsDomain = hostname === 'hirejobs.in' || hostname === 'www.hirejobs.in';
-    
-    // Check if pathname follows the jobs/[id] pattern
     const jobPathPattern = /^\/jobs\/[a-zA-Z0-9]+$/;
     const hasValidJobPath = jobPathPattern.test(pathname);
     
