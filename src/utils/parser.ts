@@ -1,5 +1,7 @@
 import { logger } from './logger';
-import { load, CheerioAPI } from 'cheerio';
+import { load } from 'cheerio';
+
+type CheerioAPI = ReturnType<typeof load>;
 
 interface ParsedJobData {
   title: string;
@@ -198,7 +200,7 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
  */
 async function parseHiringPattern($: CheerioAPI): Promise<{ company: string; title: string }> {
   const hiringText = $('h1, h2, h3, div, p')
-    .filter((_, el) => $(el).text().includes('is hiring for'))
+    .filter((_: any, el: any) => $(el).text().includes('is hiring for'))
     .first()
     .text()
     .trim();
@@ -220,7 +222,7 @@ async function parseHiringPattern($: CheerioAPI): Promise<{ company: string; tit
  */
 async function parseMetaData($: CheerioAPI): Promise<{ jobType: string; salary: string; experienceInfo: string }> {
   const metaText = $('div, span, p')
-    .filter((_, el) => {
+    .filter((_: any, el: any) => {
       const text = $(el).text().trim();
       return text.includes('Fulltime') || 
              text.includes('Part-time') || 
@@ -261,9 +263,9 @@ async function parseSections($: CheerioAPI): Promise<{ sections: {[key: string]:
   
   // Parse regular sections
   sections.forEach(section => {
-    $('h2, h3, h4, strong, b').filter((_, el) => {
+    $('h2, h3, h4, strong, b').filter((_: any, el: any) => {
       return $(el).text().trim().includes(section);
-    }).each((_, el) => {
+    }).each((_: any, el: any) => {
       let sectionContent = '';
       let nextEl = $(el).next();
 
@@ -286,14 +288,14 @@ async function parseSections($: CheerioAPI): Promise<{ sections: {[key: string]:
     });
   });
   
-  const skillsList = $('ul, ol').filter((_, el) => {
+  const skillsList = $('ul, ol').filter((_: any, el: any) => {
     return $(el).text().includes('Skills Required') || 
            $(el).prev().text().includes('Skills');
   }).first();
   
   let skills: string[] = [];
   if (skillsList.length) {
-    skills = skillsList.find('li').map((_, el) => $(el).text().trim()).get();
+    skills = skillsList.find('li').map((_: any, el: any) => $(el).text().trim()).get();
   }
   
   return { sections: sectionContents, skills: skills.length > 0 ? skills : null };
@@ -413,7 +415,7 @@ async function parseLocationAndDetails($: CheerioAPI, html: string): Promise<{ l
   let jobType = '';
   
   const locationText = $('div, span, p')
-    .filter((_, el) => {
+    .filter((_: any, el: any) => {
       const text = $(el).text().trim();
       return text.includes('India') || 
             text.includes('Remote') || 
