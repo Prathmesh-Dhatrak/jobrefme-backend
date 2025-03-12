@@ -18,8 +18,9 @@ export function validateJobUrlRequest(req: Request, _res: Response, next: NextFu
   if (!isValidUrl(jobUrl)) {
     return next(new ApiError(400, 'Invalid URL format'));
   }
-  if (!isSupportedJobBoard(jobUrl)) {
-    return next(new ApiError(400, 'URL must be from a supported job board'));
+  
+  if (!isHireJobsUrl(jobUrl)) {
+    return next(new ApiError(400, 'Only HireJobs.in URLs are supported'));
   }
   
   next();
@@ -38,28 +39,20 @@ export function isValidUrl(url: string): boolean {
 }
 
 /**
- * Checks if URL is from a supported job board
+ * Checks if URL is from HireJobs.in
  */
-export function isSupportedJobBoard(url: string): boolean {
-  const supportedDomains = [
-    'linkedin.com',
-    'indeed.com',
-    'glassdoor.com',
-    'monster.com',
-    'ziprecruiter.com',
-    'dice.com',
-    'careerbuilder.com',
-    'simplyhired.com',
-    'builtin.com',
-    'stackoverflow.com/jobs',
-    'wellfound.com',
-    'lever.co',
-    'greenhouse.io'
-  ];
-  
+export function isHireJobsUrl(url: string): boolean {
   try {
-    const { hostname } = new URL(url);
-    return supportedDomains.some(domain => hostname.includes(domain));
+    const { hostname, pathname } = new URL(url);
+    
+    // Check if hostname is hirejobs.in or www.hirejobs.in
+    const isHireJobsDomain = hostname === 'hirejobs.in' || hostname === 'www.hirejobs.in';
+    
+    // Check if pathname follows the jobs/[id] pattern
+    const jobPathPattern = /^\/jobs\/[a-zA-Z0-9]+$/;
+    const hasValidJobPath = jobPathPattern.test(pathname);
+    
+    return isHireJobsDomain && hasValidJobPath;
   } catch (_error) {
     return false;
   }

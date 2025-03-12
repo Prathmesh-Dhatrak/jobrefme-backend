@@ -49,8 +49,8 @@ export async function generateReferenceMessage(
     // Try different model names
     let models = [
       'gemini-1.5-flash',    // Most recent
-      'gemini-1.0-pro',    // Previous version
-      'gemini-pro'         // Original name
+      'gemini-1.0-pro',      // Previous version
+      'gemini-pro'           // Original name
     ];
     
     let lastError: Error | null = null;
@@ -78,7 +78,17 @@ export async function generateReferenceMessage(
         
         logger.info(`Successfully generated reference message using ${modelName}`);
         
-        return text;
+        // Make sure we don't have any mentions of HireJobs
+        let cleanedText = text.replace(/HireJobs/g, '')
+                            .replace(/hirejobs/gi, '')
+                            .replace(/as advertised on\s*\./, '')
+                            .replace(/as posted on\s*\./, '')
+                            .replace(/I hope this email finds you well\./g, '')
+                            .replace(/I hope this message finds you well\./g, '')
+                            .replace(/\n\n\n+/g, '\n\n') // Remove excessive newlines
+                            .trim();
+        
+        return cleanedText;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.warn(`Error with model ${modelName}: ${errorMessage}`);
@@ -130,16 +140,19 @@ ${jobDescription}
 ---
 
 INSTRUCTIONS:
-1. Create a professionally-worded email to ask for a reference for this specific job position.
-2. The tone should be respectful, concise, and focused on making a genuine connection.
-3. Mention the specific job title and company.
-4. Express genuine interest in the position and highlight 1-2 key qualifications from the job description.
-5. Ask for a reference in a way that makes it easy for the recipient to say yes.
-6. Keep the entire message under 200 words.
-7. Do not include a subject line or greeting/closing - just the body text.
-8. Do not fabricate personal information - leave placeholders like [YOUR NAME] instead.
+1. Create a professionally-worded message to ask for a reference for this specific job position.
+2. Format this as a DIRECT MESSAGE for social media platforms like LinkedIn, NOT as an email.
+3. DO NOT mention "HireJobs" or any job board website in your message.
+4. The tone should be respectful, concise, and focused on making a genuine connection.
+5. Mention the specific job title and company.
+6. Express genuine interest in the position and highlight 1-2 key qualifications from the job description.
+7. Ask for a reference in a way that makes it easy for the recipient to say yes.
+8. Keep the entire message under 150 words for easy readability on mobile devices.
+9. Do not include a greeting or sign-off that would be appropriate for email but not for a direct message.
+10. Do not fabricate personal information - leave placeholders like [YOUR NAME] instead.
+11. DO NOT include phrases like "I hope this email finds you well" or other email-specific language.
 
-FORMAT YOUR RESPONSE AS A DIRECT REFERENCE REQUEST MESSAGE ONLY.
+FORMAT YOUR RESPONSE AS A DIRECT REFERENCE REQUEST MESSAGE ONLY WITHOUT MENTIONING HIREJOBS OR ANY JOB BOARD.
   `;
 }
 
@@ -147,15 +160,13 @@ FORMAT YOUR RESPONSE AS A DIRECT REFERENCE REQUEST MESSAGE ONLY.
  * Generates a mock reference message for development
  */
 function generateMockReferenceMessage(jobTitle: string, companyName: string): string {
-  return `I hope this email finds you well. I'm reaching out because I'm applying for the ${jobTitle} position at ${companyName} and believe your recommendation would greatly strengthen my application.
+  return `I'm reaching out about the ${jobTitle} position at ${companyName}. I believe your recommendation would greatly strengthen my application.
 
-The role aligns perfectly with my experience in software development and problem-solving skills that you've witnessed during our time working together. I'm particularly excited about this opportunity because it would allow me to leverage my technical expertise while contributing to innovative solutions.
+This role aligns with my experience in software development and problem-solving skills that you've witnessed during our time working together. I'm particularly excited about this opportunity to leverage my technical expertise while contributing to innovative solutions.
 
-Would you be willing to provide a professional reference for me? If you're comfortable doing so, the hiring team may contact you via email or phone to discuss my qualifications and work style.
+Would you be willing to provide a professional reference for me? The hiring team may contact you to discuss my qualifications and work style.
 
-Please let me know if you need any additional information from me, such as an updated resume or specific projects to highlight. I appreciate your consideration and value the professional relationship we've built.
-
-Thank you for your time and support.
+Please let me know if you need any additional information. I value our professional relationship and appreciate your consideration.
 
 [YOUR NAME]`;
 }
