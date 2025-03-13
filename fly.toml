@@ -22,7 +22,7 @@ primary_region = 'bom'
   processes = ["app"]
   
 [[vm]]
-  memory = "1gb"
+  memory = "2gb" # Increased from 1gb to 2gb
   cpu_kind = "shared"
   cpus = 1
   processes = ["app"]
@@ -31,10 +31,15 @@ primary_region = 'bom'
   ]
 
 [[vm]]
-  memory = "1gb"
+  memory = "2gb" # Increased from 1gb to 2gb
   cpu_kind = "shared"
   cpus = 1
   processes = ["app"]
   volumes = [
     { source = "jobrefme_data_2", destination = "/app/screenshots" }
   ]
+
+# Set environment variables
+[env]
+  MAX_MEMORY_MB = "1536"
+  CRAWLER_PARALLEL_JOBS = "1"
