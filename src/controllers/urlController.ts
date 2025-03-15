@@ -19,7 +19,7 @@ const urlValidationCache = new NodeCache({
  * Useful for quick checks before starting the full referral generation process
  */
 export async function validateUrlStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const { jobUrl } = req.body;
+  const { jobUrl, apiKey } = req.body;
   
   try {
     logger.info(`Validating job URL: ${jobUrl}`);
@@ -37,7 +37,8 @@ export async function validateUrlStatus(req: Request, res: Response, next: NextF
           ? 'URL is valid and accessible' 
           : 'URL is not accessible or valid',
         cached: true,
-        cachedAt: cachedResult.timestamp
+        cachedAt: cachedResult.timestamp,
+        apiKeyProvided: apiKey ? apiKey.trim().length > 0 : false
       });
       
       return;
@@ -57,7 +58,8 @@ export async function validateUrlStatus(req: Request, res: Response, next: NextF
       message: isValid 
         ? 'URL is valid and accessible' 
         : 'URL is not accessible or valid',
-      cached: false
+      cached: false,
+      apiKeyProvided: apiKey ? apiKey.trim().length > 0 : false
     });
     
   } catch (error) {

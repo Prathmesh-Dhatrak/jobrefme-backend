@@ -13,6 +13,7 @@ interface SuccessfulJobCacheEntry {
   companyName: string;
   referralMessage: string;
   timestamp: number;
+  userProvidedApiKey: boolean;
 }
 
 interface FailedJobCacheEntry {
@@ -27,6 +28,7 @@ interface ProcessingJobCacheEntry {
   status: 'processing';
   jobId: string;
   startedAt: number;
+  apiKey?: string;
 }
 
 type JobCacheEntry = SuccessfulJobCacheEntry | FailedJobCacheEntry | ProcessingJobCacheEntry;
@@ -44,7 +46,7 @@ const jobCache = new NodeCache({
  * 2. Full response with generated referral message
  */
 export async function generateReferral(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const { jobUrl } = req.body;
+  const { jobUrl, apiKey } = req.body;
   const startTime = Date.now();
   
   try {
@@ -53,7 +55,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
     const jobId = extractJobId(jobUrl);
     logger.info(`Job ID: ${jobId}`);
     
-    const cacheKey = `job:${jobId}`;
+    const hasCustomApiKey = apiKey ? apiKey.trim().length > 0 : false;
+    const cacheKey = `job:${jobId}${hasCustomApiKey ? ':custom' : ''}`;
     const cachedResult = jobCache.get<JobCacheEntry>(cacheKey);
     
     if (cachedResult && cachedResult.status === 'completed') {
@@ -66,7 +69,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
       const processingEntry: ProcessingJobCacheEntry = {
         status: 'processing',
         jobId,
-        startedAt: Date.now()
+        startedAt: Date.now(),
+        apiKey: hasCustomApiKey ? apiKey : undefined
       };
       jobCache.set(cacheKey, processingEntry);
       
@@ -104,10 +108,12 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             companyName = 'Company';
           }
           
+          const validApiKey = apiKey && apiKey.trim().length > 0 ? apiKey : undefined;
           const referralMessage = await generateReferralMessage(
             jobTitle,
             companyName,
-            jobData.description
+            jobData.description,
+            validApiKey
           );
           
           const successEntry: SuccessfulJobCacheEntry = {
@@ -117,7 +123,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             jobTitle,
             companyName,
             referralMessage,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            userProvidedApiKey: !!validApiKey
           };
           jobCache.set(cacheKey, successEntry);
           
@@ -144,7 +151,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
       status: 'processing',
       message: 'Your request is being processed. Please wait a moment.',
       jobId,
-      estimatedTime: '5-10 seconds'
+      estimatedTime: '5-10 seconds',
+      usingCustomApiKey: hasCustomApiKey
     });
     
   } catch (error) {
@@ -160,12 +168,13 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
  */
 export async function getGeneratedReferral(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { jobUrl } = req.body;
+    const { jobUrl, apiKey } = req.body;
     
     const jobId = extractJobId(jobUrl);
     logger.info(`Retrieving referral for job ID: ${jobId}`);
     
-    const cacheKey = `job:${jobId}`;
+    const hasCustomApiKey = apiKey ? apiKey.trim().length > 0 : false;
+    const cacheKey = `job:${jobId}${hasCustomApiKey ? ':custom' : ''}`;
     const cachedResult = jobCache.get<JobCacheEntry>(cacheKey);
     
     if (!cachedResult) {
@@ -183,24 +192,27 @@ export async function getGeneratedReferral(req: Request, res: Response, next: Ne
         message: 'Your request is still being processed. Please try again in a moment.',
         jobId,
         processingTime: elapsedTime,
-        startedAt: cachedResult.startedAt
+        startedAt: cachedResult.startedAt,
+        usingCustomApiKey: hasCustomApiKey
       });
       return;
     }
     
     if (cachedResult.success) {
+      const successResult = cachedResult as SuccessfulJobCacheEntry;
       res.status(200).json({
         success: true,
-        referralMessage: cachedResult.referralMessage,
-        jobTitle: cachedResult.jobTitle,
-        companyName: cachedResult.companyName,
+        referralMessage: successResult.referralMessage,
+        jobTitle: successResult.jobTitle,
+        companyName: successResult.companyName,
         jobId,
         cached: true,
-        cachedAt: cachedResult.timestamp
+        cachedAt: successResult.timestamp,
+        usingCustomApiKey: successResult.userProvidedApiKey
       });
       return;
     } else {
-      throw new ApiError(422, cachedResult.error || 'Could not extract job details from HireJobs');
+      throw new ApiError(422, (cachedResult as FailedJobCacheEntry).error || 'Could not extract job details from HireJobs');
     }
     
   } catch (error) {
