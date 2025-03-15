@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { scrapeJobPosting } from '../services/crawlerService';
-import { generateReferenceMessage } from '../services/aiService';
+import { generateReferralMessage } from '../services/aiService';
 import { ApiError } from '../utils/errorHandler';
 import NodeCache from 'node-cache';
 
@@ -11,7 +11,7 @@ interface SuccessfulJobCacheEntry {
   jobId: string;
   jobTitle: string;
   companyName: string;
-  referenceMessage: string;
+  referralMessage: string;
   timestamp: number;
 }
 
@@ -38,17 +38,17 @@ const jobCache = new NodeCache({
 });
 
 /**
- * Generates a reference message for a job posting
+ * Generates a referral message for a job posting
  * Uses a two-phase response approach to improve perceived performance:
  * 1. Immediate acknowledge response with job ID and status
- * 2. Full response with generated reference message
+ * 2. Full response with generated referral message
  */
-export async function generateReference(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function generateReferral(req: Request, res: Response, next: NextFunction): Promise<void> {
   const { jobUrl } = req.body;
   const startTime = Date.now();
   
   try {
-    logger.info(`Processing reference request for HireJobs URL: ${jobUrl}`);
+    logger.info(`Processing referral request for HireJobs URL: ${jobUrl}`);
     
     const jobId = extractJobId(jobUrl);
     logger.info(`Job ID: ${jobId}`);
@@ -104,7 +104,7 @@ export async function generateReference(req: Request, res: Response, next: NextF
             companyName = 'Company';
           }
           
-          const referenceMessage = await generateReferenceMessage(
+          const referralMessage = await generateReferralMessage(
             jobTitle,
             companyName,
             jobData.description
@@ -116,13 +116,13 @@ export async function generateReference(req: Request, res: Response, next: NextF
             jobId,
             jobTitle,
             companyName,
-            referenceMessage,
+            referralMessage,
             timestamp: Date.now()
           };
           jobCache.set(cacheKey, successEntry);
           
           const processingTime = Date.now() - startTime;
-          logger.info(`Reference generation for ${jobId} completed in ${processingTime}ms`);
+          logger.info(`Referral generation for ${jobId} completed in ${processingTime}ms`);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
           logger.error(`Async processing error for ${jobId}: ${errorMessage}`);
@@ -149,28 +149,28 @@ export async function generateReference(req: Request, res: Response, next: NextF
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error(`Error starting reference generation: ${errorMessage}`);
+    logger.error(`Error starting referral generation: ${errorMessage}`);
     next(error instanceof Error ? error : new Error(errorMessage));
   }
 }
 
 /**
- * Endpoint to retrieve the generated reference message
+ * Endpoint to retrieve the generated referral message
  * This allows decoupling the heavy work from the initial request
  */
-export async function getGeneratedReference(req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function getGeneratedReferral(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { jobUrl } = req.body;
     
     const jobId = extractJobId(jobUrl);
-    logger.info(`Retrieving reference for job ID: ${jobId}`);
+    logger.info(`Retrieving referral for job ID: ${jobId}`);
     
     const cacheKey = `job:${jobId}`;
     const cachedResult = jobCache.get<JobCacheEntry>(cacheKey);
     
     if (!cachedResult) {
       logger.info(`No cached result found for job ID: ${jobId}`);
-      throw new ApiError(404, 'Job reference not found. Please submit the job URL first.');
+      throw new ApiError(404, 'Job referral not found. Please submit the job URL first.');
     }
     
     if (cachedResult.status === 'processing') {
@@ -191,7 +191,7 @@ export async function getGeneratedReference(req: Request, res: Response, next: N
     if (cachedResult.success) {
       res.status(200).json({
         success: true,
-        referenceMessage: cachedResult.referenceMessage,
+        referralMessage: cachedResult.referralMessage,
         jobTitle: cachedResult.jobTitle,
         companyName: cachedResult.companyName,
         jobId,
@@ -205,7 +205,7 @@ export async function getGeneratedReference(req: Request, res: Response, next: N
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error(`Error retrieving reference: ${errorMessage}`);
+    logger.error(`Error retrieving referral: ${errorMessage}`);
     next(error instanceof Error ? error : new Error(errorMessage));
   }
 }

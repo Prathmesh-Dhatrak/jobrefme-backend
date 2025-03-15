@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { errorHandler } from './utils/errorHandler';
-import referenceRoutes from './routes/referenceRoutes';
+import referralRoutes from './routes/referralRoutes';
 
 const app = express();
 
@@ -18,7 +18,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 
-app.use('/api/v1', referenceRoutes);
+app.use('/api/v1', referralRoutes);
 
 app.get('/health', (_req, res) => {
   res.status(200).json({ 

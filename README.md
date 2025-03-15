@@ -1,13 +1,13 @@
 # JobRefMe Backend
 
-A Node.js backend service that powers JobRefMe, an intelligent application that generates personalized job reference request messages based on job postings from HireJobs.in.
+A Node.js backend service that powers JobRefMe, an intelligent application that generates personalized job referral request messages based on job postings from HireJobs.in.
 
 [![Fly Deploy](https://github.com/Prathmesh-Dhatrak/jobrefme-backend/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/Prathmesh-Dhatrak/jobrefme-backend/actions/workflows/fly-deploy.yml)
 
 ## 🚀 Features
 
 - **Job Posting Extraction**: Scrapes job details from HireJobs.in using Playwright and Crawlee
-- **Smart Reference Generation**: Uses Google's Gemini AI to create tailored reference request messages
+- **Smart Referral Generation**: Uses Google's Gemini AI to create tailored referral request messages
 - **Performance Optimizations**: Implements caching for faster response times and reduced API costs
 - **Fault Tolerance**: Gracefully handles scraping failures with fallbacks
 - **Comprehensive Error Handling**: Provides clear, actionable error messages
@@ -15,9 +15,9 @@ A Node.js backend service that powers JobRefMe, an intelligent application that 
 
 ## 📋 API Endpoints
 
-### Validate URL
+### Validate Job URL
 ```
-POST /api/v1/url/validate
+POST /api/v1/validate-job-url
 ```
 Quickly checks if a job URL is valid and accessible.
 
@@ -38,11 +38,11 @@ Quickly checks if a job URL is valid and accessible.
 }
 ```
 
-### Generate Reference
+### Generate Referral
 ```
-POST /api/v1/reference
+POST /api/v1/generate-referral
 ```
-Initiates the reference generation process for a job posting.
+Initiates the referral message generation process for a job posting.
 
 **Request:**
 ```json
@@ -62,11 +62,11 @@ Initiates the reference generation process for a job posting.
 }
 ```
 
-### Get Generated Reference
+### Get Generated Referral
 ```
-POST /api/v1/reference/result
+POST /api/v1/generate-referral/result
 ```
-Retrieves the generated reference message.
+Retrieves the generated referral message.
 
 **Request:**
 ```json
@@ -79,7 +79,7 @@ Retrieves the generated reference message.
 ```json
 {
   "success": true,
-  "referenceMessage": "Applying for Software Engineer at Tech Innovations...",
+  "referralMessage": "Applying for Software Engineer at Tech Innovations...",
   "jobTitle": "Software Engineer",
   "companyName": "Tech Innovations",
   "jobId": "abc123",
