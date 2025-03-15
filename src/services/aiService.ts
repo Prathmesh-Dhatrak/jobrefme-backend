@@ -4,26 +4,13 @@ import NodeCache from 'node-cache';
 
 const USE_MOCK_AI = process.env.MOCK_AI === 'true';
 const CACHE_TTL = parseInt(process.env.CACHE_TTL || '3600', 10);
-const apiKey = process.env.GEMINI_API_KEY || '';
+const defaultApiKey = process.env.GEMINI_API_KEY || '';
 
 const messageCache = new NodeCache({
   stdTTL: CACHE_TTL,
   checkperiod: 120,
   useClones: false
 });
-
-let genAI: GoogleGenerativeAI | null = null;
-
-if (apiKey) {
-  try {
-    genAI = new GoogleGenerativeAI(apiKey);
-    logger.info('Gemini API client initialized');
-  } catch (error) {
-    logger.error('Failed to initialize Gemini API client', error);
-  }
-} else {
-  logger.warn('GEMINI_API_KEY is not set. AI generation will use mock data.');
-}
 
 /**
  * Generate a cache key from job data
@@ -49,18 +36,41 @@ function hashString(text: string): string {
 }
 
 /**
+ * Initialize Gemini API client with the given API key
+ * @param apiKey The API key to use (falls back to environment variable if not provided)
+ * @returns GoogleGenerativeAI client or null if initialization fails
+ */
+function initGeminiClient(apiKey: string = defaultApiKey): GoogleGenerativeAI | null {
+  if (!apiKey) {
+    logger.warn('No Gemini API key provided. AI generation will use mock data.');
+    return null;
+  }
+  
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    logger.info('Gemini API client initialized');
+    return genAI;
+  } catch (error) {
+    logger.error('Failed to initialize Gemini API client', error);
+    return null;
+  }
+}
+
+/**
  * Generates a referral request message using Google Gemini API
  * with caching to avoid redundant API calls
  * 
  * @param jobTitle The job title
  * @param companyName The company name
  * @param jobDescription The job description
- * @returns Generated referral request message
+ * @param userApiKey Optional user-provided API key
+ * @returns Generated referral message
  */
 export async function generateReferralMessage(
   jobTitle: string,
   companyName: string,
-  jobDescription: string
+  jobDescription: string,
+  userApiKey?: string
 ): Promise<string> {
   try {
     const descriptionPreview = jobDescription.slice(0, 1000);
@@ -76,8 +86,20 @@ export async function generateReferralMessage(
     
     logger.info(`Generating referral message for ${jobTitle} at ${companyName}`);
     
-    if (USE_MOCK_AI || !genAI || !apiKey) {
-      logger.info('Using mock AI response');
+    const apiKey = userApiKey ? userApiKey.trim() : defaultApiKey;
+    
+    if (USE_MOCK_AI || !apiKey) {
+      logger.info('Using mock AI response - no valid API key available');
+      const mockMessage = generateMockReferralMessage(jobTitle, companyName);
+      
+      messageCache.set(cacheKey, mockMessage);
+      
+      return mockMessage;
+    }
+    
+    const genAI = initGeminiClient(apiKey);
+    if (!genAI) {
+      logger.info('Falling back to mock AI response due to client initialization failure');
       const mockMessage = generateMockReferralMessage(jobTitle, companyName);
       
       messageCache.set(cacheKey, mockMessage);

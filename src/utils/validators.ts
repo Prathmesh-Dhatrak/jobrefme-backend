@@ -5,7 +5,7 @@ import { ApiError } from './errorHandler';
  * Validates job URL request
  */
 export function validateJobUrlRequest(req: Request, _res: Response, next: NextFunction) {
-  const { jobUrl } = req.body;
+  const { jobUrl, apiKey } = req.body;
   
   if (!jobUrl) {
     return next(new ApiError(400, 'Job URL is required'));
@@ -21,6 +21,10 @@ export function validateJobUrlRequest(req: Request, _res: Response, next: NextFu
   
   if (!isHireJobsUrl(jobUrl)) {
     return next(new ApiError(400, 'Only HireJobs.in URLs are supported'));
+  }
+  
+  if (apiKey !== undefined && typeof apiKey !== 'string') {
+    return next(new ApiError(400, 'API key must be a string'));
   }
   
   next();
