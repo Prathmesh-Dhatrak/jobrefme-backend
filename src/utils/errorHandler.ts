@@ -39,7 +39,7 @@ export function errorHandler(
   if (err.message.includes('generate') || err.message.includes('AI')) {
     res.status(503).json({
       success: false,
-      error: 'Could not generate reference message. Please try again later.'
+      error: 'Could not generate referral message. Please try again later.'
     });
     return;
   }

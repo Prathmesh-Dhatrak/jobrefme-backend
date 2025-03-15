@@ -1,7 +1,7 @@
 {
   "name": "jobrefme-backend",
   "version": "1.0.0",
-  "description": "Backend service for JobRefMe reference request generator",
+  "description": "Backend service for JobRefMe referral request generator",
   "license": "MIT",
   "main": "dist/server.js",
   "scripts": {

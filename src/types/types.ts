@@ -8,18 +8,18 @@ export interface JobData {
   }
   
   /**
-   * Request payload for reference generation
+   * Request payload for referral generation
    */
-  export interface ReferenceRequest {
+  export interface ReferralRequest {
     jobUrl: string;
   }
   
   /**
-   * Response payload for reference generation
+   * Response payload for referral generation
    */
-  export interface ReferenceResponse {
+  export interface ReferralResponse {
     success: boolean;
-    referenceMessage?: string;
+    referralMessage?: string;
     jobTitle?: string;
     companyName?: string;
     error?: string;

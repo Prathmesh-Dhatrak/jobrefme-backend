@@ -49,15 +49,15 @@ function hashString(text: string): string {
 }
 
 /**
- * Generates a reference request message using Google Gemini API
+ * Generates a referral request message using Google Gemini API
  * with caching to avoid redundant API calls
  * 
  * @param jobTitle The job title
  * @param companyName The company name
  * @param jobDescription The job description
- * @returns Generated reference request message
+ * @returns Generated referral request message
  */
-export async function generateReferenceMessage(
+export async function generateReferralMessage(
   jobTitle: string,
   companyName: string,
   jobDescription: string
@@ -74,11 +74,11 @@ export async function generateReferenceMessage(
       return cachedMessage;
     }
     
-    logger.info(`Generating reference message for ${jobTitle} at ${companyName}`);
+    logger.info(`Generating referral message for ${jobTitle} at ${companyName}`);
     
     if (USE_MOCK_AI || !genAI || !apiKey) {
       logger.info('Using mock AI response');
-      const mockMessage = generateMockReferenceMessage(jobTitle, companyName);
+      const mockMessage = generateMockReferralMessage(jobTitle, companyName);
       
       messageCache.set(cacheKey, mockMessage);
       
@@ -105,7 +105,7 @@ export async function generateReferenceMessage(
       const response = result.response;
       const text = response.text();
       
-      logger.info(`Successfully generated reference message using ${modelName}`);
+      logger.info(`Successfully generated referral message using ${modelName}`);
       
       let cleanedText = text.replace(/HireJobs/g, '')
                         .replace(/hirejobs/gi, '')
@@ -124,27 +124,27 @@ export async function generateReferenceMessage(
       logger.error(`Error with model ${modelName}: ${errorMessage}`);
       
       if (process.env.NODE_ENV === 'development') {
-        logger.info('Falling back to mock reference message due to API error');
-        const mockMessage = generateMockReferenceMessage(jobTitle, companyName);
+        logger.info('Falling back to mock referral message due to API error');
+        const mockMessage = generateMockReferralMessage(jobTitle, companyName);
         
         messageCache.set(cacheKey, mockMessage);
         
         return mockMessage;
       }
       
-      throw new Error('Failed to generate reference message');
+      throw new Error('Failed to generate referral message');
     }
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`Error generating reference message with AI: ${errorMessage}`);
+    logger.error(`Error generating referral message with AI: ${errorMessage}`);
     
     if (process.env.NODE_ENV === 'development') {
-      logger.info('Falling back to mock reference message due to API error');
-      return generateMockReferenceMessage(jobTitle, companyName);
+      logger.info('Falling back to mock referral message due to API error');
+      return generateMockReferralMessage(jobTitle, companyName);
     }
     
-    throw new Error('Failed to generate reference message');
+    throw new Error('Failed to generate referral message');
   }
 }
 
@@ -157,7 +157,7 @@ function createPrompt(
   jobDescription: string
 ): string {
   return `
-You are tasked with creating a professional and personalized reference request message.
+You are tasked with creating a professional and personalized referral request message.
 
 JOB POSTING DETAILS:
 ---
@@ -201,9 +201,9 @@ FORMAT YOUR RESPONSE EXACTLY AS THE TEMPLATE ABOVE WITH ONLY THE SKILLS SECTION 
 }
 
 /**
- * Generates a mock reference message for development
+ * Generates a mock referral message for development
  */
-function generateMockReferenceMessage(jobTitle: string, companyName: string): string {
+function generateMockReferralMessage(jobTitle: string, companyName: string): string {
   return `Applying for ${jobTitle} at ${companyName}
 
 Hey [RECIPIENT],

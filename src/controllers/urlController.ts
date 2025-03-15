@@ -16,7 +16,7 @@ const urlValidationCache = new NodeCache({
 
 /**
  * Validates if a job URL is accessible
- * Useful for quick checks before starting the full reference generation process
+ * Useful for quick checks before starting the full referral generation process
  */
 export async function validateUrlStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
   const { jobUrl } = req.body;

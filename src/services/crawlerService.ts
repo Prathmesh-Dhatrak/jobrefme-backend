@@ -300,7 +300,7 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
     return {
       title: `Job Position (ID: ${jobId})`,
       company: `Company (ID: ${jobId})`,
-      description: 'Failed to extract job description. Using generic template for reference message generation.'
+      description: 'Failed to extract job description. Using generic template for referral message generation.'
     };
   }
 }

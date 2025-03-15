@@ -14,7 +14,7 @@ logger.info(`GEMINI_API_KEY is ${process.env.GEMINI_API_KEY ? 'set' : 'not set'}
 
 app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
-  logger.info(`HireJobs reference generator service is ready!`);
+  logger.info(`Referral generator service is ready!`);
 });
 
 process.on('unhandledRejection', (error: Error) => {
