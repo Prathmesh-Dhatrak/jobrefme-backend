@@ -4,41 +4,33 @@ import { logger } from '../utils/logger';
 import { JobData } from '../types/types';
 import { parseHireJobsHTML } from '../utils/parser';
 
-const USE_MOCK_CRAWLER = process.env.MOCK_CRAWLER === 'true';
-
-interface ParsedJobData extends JobData {
-  location?: string;
-  salary?: string;
-  jobType?: string;
-  postedDate?: string;
-}
-
 /**
  * Specialized crawler for HireJobs.in job postings
  * 
  * @param jobUrl URL of the HireJobs job posting
  * @returns JobData object containing extracted content
+ * @throws Error if job data cannot be extracted
  */
-export async function scrapeJobPosting(jobUrl: string): Promise<JobData | null> {
+export async function scrapeJobPosting(jobUrl: string): Promise<JobData> {
   logger.info(`Starting crawler for HireJobs URL: ${jobUrl}`);
   
-  if (USE_MOCK_CRAWLER) {
-    logger.info('Using mock crawler data (MOCK_CRAWLER=true)');
-    return getMockJobData(jobUrl);
+  if (process.env.USE_DIRECT_FETCH === 'true') {
+    try {
+      logger.info('Using direct fetch approach to reduce memory usage');
+      const jobData = await directFetchJobData(jobUrl);
+      
+      validateJobData(jobData, jobUrl);
+      return jobData;
+    } catch (directFetchError) {
+      logger.warn(`Direct fetch failed: ${directFetchError instanceof Error ? directFetchError.message : String(directFetchError)}`);
+    }
   }
   
   try {
-    // Direct non-crawler approach to reduce memory usage
-    if (process.env.USE_DIRECT_FETCH === 'true') {
-      logger.info('Using direct fetch approach to reduce memory usage');
-      return await directFetchJobData(jobUrl);
-    }
-    
     let jobData: JobData | null = null;
     
     const crawler = new PlaywrightCrawler({
       headless: true,
-      // Reduce memory usage
       maxConcurrency: 1,
       maxRequestRetries: 1,
       navigationTimeoutSecs: 30,
@@ -65,6 +57,7 @@ export async function scrapeJobPosting(jobUrl: string): Promise<JobData | null> 
         
         try {
           jobData = await extractHireJobsData(page, request.url);
+          validateJobData(jobData, request.url);
           
           log.info(`Extracted job data: ${JSON.stringify({
             title: jobData.title,
@@ -73,8 +66,7 @@ export async function scrapeJobPosting(jobUrl: string): Promise<JobData | null> 
           })}`);
         } catch (extractError) {
           log.error(`Error extracting job data: ${extractError instanceof Error ? extractError.message : String(extractError)}`);
-          // Make sure we return mock data in case of extraction failure
-          jobData = getMockJobData(request.url);
+          throw extractError;
         }
       },
       
@@ -86,28 +78,46 @@ export async function scrapeJobPosting(jobUrl: string): Promise<JobData | null> 
     await crawler.run([jobUrl]);
     
     if (!jobData) {
-      logger.warn('Crawler completed but no job data extracted, falling back to mock data');
-      return getMockJobData(jobUrl);
+      throw new Error(`Failed to extract job data from ${jobUrl}`);
     }
     
+    validateJobData(jobData, jobUrl);
     return jobData;
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`Crawler error: ${errorMessage}`);
     
-    if (process.env.NODE_ENV === 'development' || process.env.MOCK_CRAWLER === 'true') {
-      logger.info('Falling back to mock data due to crawler error');
-      return getMockJobData(jobUrl);
-    }
-    
-    throw error;
+    throw new Error(`Failed to extract job data: ${errorMessage}`);
   }
 }
 
 /**
- * Simpler direct fetch approach as a fallback for memory constrained environments
+ * Validate job data to ensure it meets minimum requirements
+ * @throws Error if job data is invalid
  */
-async function directFetchJobData(jobUrl: string): Promise<JobData | null> {
+function validateJobData(jobData: JobData | null, url: string): void {
+  if (!jobData) {
+    throw new Error(`No job data was extracted from ${url}`);
+  }
+  
+  if (!jobData.title || jobData.title.length < 3 || jobData.title === 'Job Position') {
+    throw new Error('Could not extract valid job title');
+  }
+  
+  if (!jobData.company || jobData.company.length < 2 || jobData.company === 'Company on') {
+    throw new Error('Could not extract valid company name');
+  }
+  
+  if (!jobData.description || jobData.description.length < 100) {
+    throw new Error('Could not extract sufficient job description');
+  }
+}
+
+/**
+ * Simpler direct fetch approach for memory constrained environments
+ * @throws Error if fetching or parsing fails
+ */
+async function directFetchJobData(jobUrl: string): Promise<JobData> {
   try {
     logger.info(`Using direct fetch for ${jobUrl}`);
     
@@ -118,15 +128,17 @@ async function directFetchJobData(jobUrl: string): Promise<JobData | null> {
     });
     
     if (!response.ok) {
-      logger.error(`Direct fetch failed with status ${response.status}`);
-      return getMockJobData(jobUrl);
+      throw new Error(`Direct fetch failed with status ${response.status}`);
     }
     
     const html = await response.text();
-    return await parseHireJobsHTML(html);
+    const jobData = await parseHireJobsHTML(html);
+    validateJobData(jobData, jobUrl);
+    return jobData;
   } catch (error) {
-    logger.error(`Direct fetch error: ${error instanceof Error ? error.message : String(error)}`);
-    return getMockJobData(jobUrl);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Direct fetch error: ${errorMessage}`);
+    throw new Error(`Failed to fetch job data: ${errorMessage}`);
   }
 }
 
@@ -152,6 +164,13 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
       skills: string;
     }
     
+    interface ParsedJobData extends JobData {
+      location?: string;
+      salary?: string;
+      jobType?: string;
+      postedDate?: string;
+    }
+    
     const [
       hiringInfo,
       jobDetails,
@@ -170,8 +189,8 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
       parseHireJobsHTML(html).catch(error => {
         logger.warn(`HTML parser error: ${error instanceof Error ? error.message : String(error)}`);
         return { 
-          title: 'Job Position', 
-          company: 'Company', 
+          title: '', 
+          company: '', 
           description: '' 
         } as ParsedJobData;
       })
@@ -266,21 +285,16 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
       }
     }
     
-    if (!jobTitle || jobTitle.length < 3 || jobTitle === 'Job Position') {
-      jobTitle = `Position (ID: ${jobId})`;
+    if (!jobTitle || jobTitle.length < 3) {
+      throw new Error('Could not extract job title');
     }
     
-    if (!companyName || companyName.length < 2 || companyName === 'Company on') {
-      companyName = `Company (ID: ${jobId})`;
+    if (!companyName || companyName.length < 2) {
+      throw new Error('Could not extract company name');
     }
     
     if (!jobDescription || jobDescription.length < 100) {
-      if (process.env.NODE_ENV === 'development' || process.env.MOCK_CRAWLER === 'true') {
-        const mockData = getMockJobData(url);
-        jobDescription = mockData.description;
-      } else {
-        jobDescription = `This is a job posting for ${jobTitle} at ${companyName}. Unfortunately, detailed job description could not be extracted.`;
-      }
+      throw new Error('Could not extract sufficient job description');
     }
     
     logger.info(`Final extracted data - Title: ${jobTitle}, Company: ${companyName}, Description length: ${jobDescription.length} chars`);
@@ -293,15 +307,7 @@ async function extractHireJobsData(page: Page, url: string): Promise<JobData> {
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.error(`Error extracting HireJobs data: ${errorMessage}`);
-    
-    const jobId = url.split('/').pop() || 'unknown';
-    
-    // Always return something to prevent null returns
-    return {
-      title: `Job Position (ID: ${jobId})`,
-      company: `Company (ID: ${jobId})`,
-      description: 'Failed to extract job description. Using generic template for referral message generation.'
-    };
+    throw error;
   }
 }
 
@@ -391,39 +397,4 @@ async function extractJobDetails(page: Page): Promise<{ metadata: string; sectio
       skills: skillsSection
     };
   });
-}
-
-/**
- * Generate realistic mock job data for development
- */
-function getMockJobData(_url: string): JobData {
-  return {
-    title: `Software Engineer`,
-    company: 'Tech Innovations',
-    description: `We are looking for a talented Software Engineer to join our team at Tech Innovations.
-
-Responsibilities:
-• Developing and maintaining web applications using modern JavaScript frameworks
-• Writing clean, efficient, and well-documented code
-• Collaborating with cross-functional teams including designers, product managers, and other developers
-• Implementing responsive design and ensuring cross-browser compatibility
-• Participating in code reviews and mentoring junior developers
-
-Requirements:
-• 3+ years of experience in software development
-• Proficiency in JavaScript/TypeScript, HTML, CSS
-• Experience with React, Node.js, and Express
-• Familiarity with RESTful APIs and GraphQL
-• Knowledge of version control systems (Git)
-• Strong problem-solving skills and attention to detail
-• Excellent communication skills
-
-Benefits:
-• Competitive salary
-• Flexible work hours
-• Remote work options
-• Health insurance
-• Professional development opportunities
-• Collaborative and innovative work environment`
-  };
 }

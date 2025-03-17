@@ -41,5 +41,5 @@ primary_region = 'bom'
 
 # Set environment variables
 [env]
-  MAX_MEMORY_MB = "1536"
+  MAX_MEMORY_MB = "2048"
   CRAWLER_PARALLEL_JOBS = "1"
