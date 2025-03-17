@@ -13,7 +13,6 @@ interface SuccessfulJobCacheEntry {
   companyName: string;
   referralMessage: string;
   timestamp: number;
-  userProvidedApiKey: boolean;
 }
 
 interface FailedJobCacheEntry {
@@ -28,13 +27,12 @@ interface ProcessingJobCacheEntry {
   status: 'processing';
   jobId: string;
   startedAt: number;
-  apiKey?: string;
 }
 
 type JobCacheEntry = SuccessfulJobCacheEntry | FailedJobCacheEntry | ProcessingJobCacheEntry;
 
 const jobCache = new NodeCache({
-  stdTTL: 3600, // 1 hour cache TTL
+  stdTTL: 3600, // 1 hour cache TTL for successful entries
   checkperiod: 120, // Check for expired keys every 2 minutes
   useClones: false
 });
@@ -55,43 +53,34 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
     const jobId = extractJobId(jobUrl);
     logger.info(`Job ID: ${jobId}`);
     
-    const hasCustomApiKey = apiKey ? apiKey.trim().length > 0 : false;
-    const cacheKey = `job:${jobId}${hasCustomApiKey ? ':custom' : ''}`;
+    const cacheKey = apiKey ? `job:${jobId}:custom-key` : `job:${jobId}`;
     const cachedResult = jobCache.get<JobCacheEntry>(cacheKey);
     
     if (cachedResult && cachedResult.status === 'completed') {
       logger.info(`Found completed result for job ID: ${jobId}`);
+      
+      if (!cachedResult.success) {
+        return next(new ApiError(422, cachedResult.error || 'Failed to process job data'));
+      }
     } 
     else if (cachedResult && cachedResult.status === 'processing') {
       logger.info(`Job ID: ${jobId} is already being processed (started ${Date.now() - cachedResult.startedAt}ms ago)`);
+      if (Date.now() - cachedResult.startedAt > 120000) {
+        logger.warn(`Processing for job ID: ${jobId} appears stalled (${Date.now() - cachedResult.startedAt}ms)`);
+        jobCache.del(cacheKey);
+      }
     }
     else {
       const processingEntry: ProcessingJobCacheEntry = {
         status: 'processing',
         jobId,
-        startedAt: Date.now(),
-        apiKey: hasCustomApiKey ? apiKey : undefined
+        startedAt: Date.now()
       };
       jobCache.set(cacheKey, processingEntry);
       
       (async () => {
         try {
           const jobData = await scrapeJobPosting(jobUrl);
-          
-          if (!jobData) {
-            logger.error(`Could not extract job details for ${jobId}`);
-            
-            const errorEntry: FailedJobCacheEntry = {
-              status: 'completed',
-              success: false,
-              jobId,
-              error: 'Could not extract job details from HireJobs',
-              timestamp: Date.now()
-            };
-            jobCache.set(cacheKey, errorEntry);
-            
-            return;
-          }
           
           let jobTitle = jobData.title.trim();
           let companyName = jobData.company.trim();
@@ -104,16 +93,11 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             }
           }
           
-          if (companyName === 'Company on') {
-            companyName = 'Company';
-          }
-          
-          const validApiKey = apiKey && apiKey.trim().length > 0 ? apiKey : undefined;
           const referralMessage = await generateReferralMessage(
             jobTitle,
             companyName,
             jobData.description,
-            validApiKey
+            apiKey
           );
           
           const successEntry: SuccessfulJobCacheEntry = {
@@ -123,8 +107,7 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             jobTitle,
             companyName,
             referralMessage,
-            timestamp: Date.now(),
-            userProvidedApiKey: !!validApiKey
+            timestamp: Date.now()
           };
           jobCache.set(cacheKey, successEntry);
           
@@ -141,7 +124,7 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             error: errorMessage,
             timestamp: Date.now()
           };
-          jobCache.set(cacheKey, errorEntry);
+          jobCache.set(cacheKey, errorEntry, 300);
         }
       })();
     }
@@ -151,8 +134,7 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
       status: 'processing',
       message: 'Your request is being processed. Please wait a moment.',
       jobId,
-      estimatedTime: '5-10 seconds',
-      usingCustomApiKey: hasCustomApiKey
+      estimatedTime: '5-10 seconds'
     });
     
   } catch (error) {
@@ -173,8 +155,7 @@ export async function getGeneratedReferral(req: Request, res: Response, next: Ne
     const jobId = extractJobId(jobUrl);
     logger.info(`Retrieving referral for job ID: ${jobId}`);
     
-    const hasCustomApiKey = apiKey ? apiKey.trim().length > 0 : false;
-    const cacheKey = `job:${jobId}${hasCustomApiKey ? ':custom' : ''}`;
+    const cacheKey = apiKey ? `job:${jobId}:custom-key` : `job:${jobId}`;
     const cachedResult = jobCache.get<JobCacheEntry>(cacheKey);
     
     if (!cachedResult) {
@@ -186,38 +167,81 @@ export async function getGeneratedReferral(req: Request, res: Response, next: Ne
       const elapsedTime = Date.now() - cachedResult.startedAt;
       logger.info(`Job ID: ${jobId} is still processing (running for ${elapsedTime}ms)`);
       
+      if (elapsedTime > 120000) {
+        logger.warn(`Processing for job ID: ${jobId} appears stalled (${elapsedTime}ms)`);
+        jobCache.del(cacheKey);
+        throw new ApiError(500, 'Processing is taking too long. Please try again.');
+      }
+      
       res.status(202).json({
         success: true,
         status: 'processing',
         message: 'Your request is still being processed. Please try again in a moment.',
         jobId,
         processingTime: elapsedTime,
-        startedAt: cachedResult.startedAt,
-        usingCustomApiKey: hasCustomApiKey
+        startedAt: cachedResult.startedAt
       });
       return;
     }
     
     if (cachedResult.success) {
-      const successResult = cachedResult as SuccessfulJobCacheEntry;
       res.status(200).json({
         success: true,
-        referralMessage: successResult.referralMessage,
-        jobTitle: successResult.jobTitle,
-        companyName: successResult.companyName,
+        referralMessage: cachedResult.referralMessage,
+        jobTitle: cachedResult.jobTitle,
+        companyName: cachedResult.companyName,
         jobId,
         cached: true,
-        cachedAt: successResult.timestamp,
-        usingCustomApiKey: successResult.userProvidedApiKey
+        cachedAt: cachedResult.timestamp
       });
       return;
     } else {
-      throw new ApiError(422, (cachedResult as FailedJobCacheEntry).error || 'Could not extract job details from HireJobs');
+      throw new ApiError(422, cachedResult.error || 'Could not extract job details from HireJobs');
     }
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     logger.error(`Error retrieving referral: ${errorMessage}`);
+    next(error instanceof Error ? error : new Error(errorMessage));
+  }
+}
+
+/**
+ * Clears the cache for a specific job ID
+ * Useful when a job posting has been updated or when forcing a refresh
+ */
+export async function clearReferralCache(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { jobUrl } = req.body;
+    
+    const jobId = extractJobId(jobUrl);
+    logger.info(`Clearing cache for job ID: ${jobId}`);
+    
+    // Clear both standard and custom API key cache entries
+    const standardCacheKey = `job:${jobId}`;
+    const customCacheKey = `job:${jobId}:custom-key`;
+    
+    const standardExists = jobCache.has(standardCacheKey);
+    const customExists = jobCache.has(customCacheKey);
+    
+    if (standardExists) {
+      jobCache.del(standardCacheKey);
+    }
+    
+    if (customExists) {
+      jobCache.del(customCacheKey);
+    }
+    
+    const existed = standardExists || customExists;
+    
+    res.status(200).json({
+      success: true,
+      message: existed ? `Cache cleared for job ID: ${jobId}` : `No cache entry found for job ID: ${jobId}`,
+      jobId
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Error clearing cache: ${errorMessage}`);
     next(error instanceof Error ? error : new Error(errorMessage));
   }
 }

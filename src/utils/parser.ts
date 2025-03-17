@@ -51,15 +51,20 @@ export function cleanText(text: string): string {
  * 
  * @param html Raw HTML content from the job posting page
  * @returns Structured job data
+ * @throws Error if parsing fails or insufficient data is extracted
  */
 export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
   logger.info('Parsing HireJobs HTML content');
   
-  const result: ParsedJobData = {
-    title: 'Job Position',
-    company: 'Company',
-    description: '',
-  };
+  if (!html || html.trim().length === 0) {
+    throw new Error('Empty HTML content provided for parsing');
+  }
+  
+  // Check if the page is a 404 or error page
+  if (html.includes('Page not found') || html.includes('Error 404') || 
+      html.toLowerCase().includes('page you were looking for doesn\'t exist')) {
+    throw new Error('Page not found or invalid job posting URL');
+  }
   
   try {
     const $ = load(html);
@@ -84,114 +89,141 @@ export async function parseHireJobsHTML(html: string): Promise<ParsedJobData> {
       parseStructuredData(html)
     ]);
     
+    let title = '';
+    let company = '';
+    let description = '';
     
-    if (hiringPattern.company) {
-      result.company = hiringPattern.company;
-    }
-    if (hiringPattern.title) {
-      result.title = hiringPattern.title;
+    // Build title from available sources
+    if (hiringPattern.title && hiringPattern.title.length > 3) {
+      title = hiringPattern.title;
+    } else if (titleData.titleFromMeta && titleData.titleFromMeta.length > 3) {
+      title = titleData.titleFromMeta;
+    } else if (titleData.titleFromHeader && titleData.titleFromHeader.length > 3) {
+      title = titleData.titleFromHeader;
+    } else if (structuredData?.title && structuredData.title.length > 3) {
+      title = structuredData.title;
     }
     
-    if (metaData.jobType) {
-      result.jobType = metaData.jobType;
+    // Build company from available sources
+    if (hiringPattern.company && hiringPattern.company.length > 2) {
+      company = hiringPattern.company;
+    } else if (companyData.companyFromMeta && companyData.companyFromMeta.length > 2) {
+      company = companyData.companyFromMeta;
+    } else if (companyData.companyFromDOM && companyData.companyFromDOM.length > 2) {
+      company = companyData.companyFromDOM;
+    } else if (structuredData?.company && structuredData.company.length > 2) {
+      company = structuredData.company;
     }
-    if (metaData.salary) {
-      result.salary = metaData.salary;
-    }
+    
+    // Build description from various sources
+    let descriptionParts = [];
+    
     if (metaData.experienceInfo) {
-      result.description = `Experience Required: ${metaData.experienceInfo}\n\n${result.description}`;
-    }
-    
-    if (locationData.location) {
-      result.location = locationData.location;
-    }
-    if (locationData.salary && !result.salary) {
-      result.salary = locationData.salary;
-    }
-    if (locationData.jobType && !result.jobType) {
-      result.jobType = locationData.jobType;
+      descriptionParts.push(`Experience Required: ${metaData.experienceInfo}`);
     }
     
     if (sectionData.sections && Object.keys(sectionData.sections).length > 0) {
-      let descriptionParts = [];
       for (const [section, content] of Object.entries(sectionData.sections)) {
         descriptionParts.push(`${section}:\n${content}`);
       }
-      
-      result.description = descriptionParts.join('\n\n');
     }
     
-    if (sectionData.skills && !result.description.includes('Skills')) {
-      result.description += '\n\nSkills Required:\n' + sectionData.skills.join('\n');
+    if (sectionData.skills && sectionData.skills.length > 0) {
+      descriptionParts.push(`Skills Required:\n${sectionData.skills.join('\n')}`);
     }
     
-    if (titleData.titleFromMeta && (!result.title || result.title === 'Job Position')) {
-      result.title = titleData.titleFromMeta;
-    } else if (titleData.titleFromHeader && (!result.title || result.title === 'Job Position')) {
-      result.title = titleData.titleFromHeader;
+    if (descriptionParts.length > 0) {
+      description = descriptionParts.join('\n\n');
+    } else if (descriptionData.description && descriptionData.description.length > 50) {
+      description = descriptionData.description;
+    } else if (structuredData?.description && structuredData.description.length > 50) {
+      description = structuredData.description;
     }
     
-    if (companyData.companyFromMeta && (!result.company || result.company === 'Company')) {
-      result.company = companyData.companyFromMeta;
-    } else if (companyData.companyFromDOM && (!result.company || result.company === 'Company')) {
-      result.company = companyData.companyFromDOM;
+    // Clean up the extracted data
+    if (title) {
+      title = title
+        .replace(/hirejobs/gi, '')
+        .replace(/^RE:\s*/i, '')
+        .replace(/^FWD:\s*/i, '')
+        .replace(/job details/i, '')
+        .replace(/\s*\|\s*.+$/i, '')
+        .trim();
     }
     
-    if (!result.description || result.description.length < 50) {
-      if (descriptionData.description && descriptionData.description.length > 50) {
-        result.description = descriptionData.description;
-      }
+    if (company) {
+      company = company
+        .replace(/hirejobs/gi, '')
+        .replace(/^\s*at\s+/i, '')
+        .replace(/company\s+on\s*$/i, '')
+        .trim();
     }
     
-    if (structuredData) {
-      if (structuredData.title && (!result.title || result.title === 'Job Position')) {
-        result.title = structuredData.title;
-      }
-      
-      if (structuredData.company && (!result.company || result.company === 'Company')) {
-        result.company = structuredData.company;
-      }
-      
-      if (structuredData.description && (!result.description || result.description.length < 50)) {
-        result.description = structuredData.description;
-      }
-      
-      if (structuredData.location && !result.location) {
-        result.location = structuredData.location;
-      }
-      
-      if (structuredData.salary && !result.salary) {
-        result.salary = structuredData.salary;
-      }
-      
-      if (structuredData.jobType && !result.jobType) {
-        result.jobType = structuredData.jobType;
-      }
-      
-      if (structuredData.postedDate) {
-        result.postedDate = structuredData.postedDate;
-      }
+    // Additional information
+    const additionalInfo = [];
+    
+    if (locationData.location) {
+      additionalInfo.push(`Location: ${locationData.location}`);
     }
     
-    if (result.title) {
-      result.title = result.title.replace(/hirejobs/gi, '').trim();
-      if (result.title === '' || result.title.toLowerCase() === 'job details') {
-        result.title = 'Job Position';
-      }
+    if (metaData.salary || locationData.salary) {
+      additionalInfo.push(`Salary: ${metaData.salary || locationData.salary}`);
     }
     
-    if (result.company) {
-      result.company = result.company.replace(/hirejobs/gi, '').trim();
-      if (result.company === '' || result.company === 'Company on') {
-        result.company = 'Company on HireJobs';
-      }
+    if (metaData.jobType || locationData.jobType) {
+      additionalInfo.push(`Job Type: ${metaData.jobType || locationData.jobType}`);
+    }
+    
+    if (structuredData?.postedDate) {
+      additionalInfo.push(`Posted Date: ${structuredData.postedDate}`);
+    }
+    
+    if (additionalInfo.length > 0 && !description.includes('Additional Information')) {
+      description += '\n\nAdditional Information:\n' + additionalInfo.join('\n');
+    }
+    
+    // Validate the extracted data
+    if (!title || title.length < 3) {
+      throw new Error('Could not extract valid job title');
+    }
+    
+    if (!company || company.length < 2) {
+      throw new Error('Could not extract valid company name');
+    }
+    
+    if (!description || description.length < 100) {
+      throw new Error('Could not extract sufficient job description');
+    }
+    
+    const result: ParsedJobData = {
+      title,
+      company,
+      description
+    };
+    
+    // Add optional fields if available
+    if (locationData.location) {
+      result.location = locationData.location;
+    }
+    
+    if (metaData.salary || locationData.salary) {
+      result.salary = metaData.salary || locationData.salary;
+    }
+    
+    if (metaData.jobType || locationData.jobType) {
+      result.jobType = metaData.jobType || locationData.jobType;
+    }
+    
+    if (structuredData?.postedDate) {
+      result.postedDate = structuredData.postedDate;
     }
     
     logger.info(`Parsed job data: ${result.title} at ${result.company}`);
     return result;
   } catch (error) {
-    logger.error('Error parsing HireJobs HTML:', error);
-    return result;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Error parsing HireJobs HTML: ${errorMessage}`);
+    throw new Error(`Failed to parse job details: ${errorMessage}`);
   }
 }
 

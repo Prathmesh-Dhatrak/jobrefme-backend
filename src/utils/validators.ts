@@ -5,7 +5,7 @@ import { ApiError } from './errorHandler';
  * Validates job URL request
  */
 export function validateJobUrlRequest(req: Request, _res: Response, next: NextFunction) {
-  const { jobUrl, apiKey } = req.body;
+  const { jobUrl } = req.body;
   
   if (!jobUrl) {
     return next(new ApiError(400, 'Job URL is required'));
@@ -23,8 +23,18 @@ export function validateJobUrlRequest(req: Request, _res: Response, next: NextFu
     return next(new ApiError(400, 'Only HireJobs.in URLs are supported'));
   }
   
-  if (apiKey !== undefined && typeof apiKey !== 'string') {
-    return next(new ApiError(400, 'API key must be a string'));
+  if (req.body.apiKey !== undefined) {
+    if (typeof req.body.apiKey !== 'string') {
+      return next(new ApiError(400, 'API key must be a string'));
+    }
+    
+    if (req.body.apiKey.trim() === '') {
+      return next(new ApiError(400, 'API key cannot be empty'));
+    }
+    
+    if (!isValidApiKeyFormat(req.body.apiKey)) {
+      return next(new ApiError(400, 'Invalid API key format'));
+    }
   }
   
   next();
@@ -57,3 +67,21 @@ export function isHireJobsUrl(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * Performs a basic format check for Gemini API keys
+ * This is a simple validation, not a comprehensive check
+ */
+export function isValidApiKeyFormat(ApiKey: string): boolean {
+  const apiKey = ApiKey.trim();
+  
+  if (apiKey.length < 20) {
+    return false;
+  }
+  
+  if (!/^[A-Za-z0-9_-]+$/.test(apiKey)) {
+    return false;
+  }
+  
+  return true;
+} 
