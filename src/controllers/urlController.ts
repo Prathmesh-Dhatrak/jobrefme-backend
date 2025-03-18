@@ -7,6 +7,7 @@ import NodeCache from 'node-cache';
 interface UrlValidationCacheEntry {
   valid: boolean;
   timestamp: number;
+  userId?: string;
 }
 
 const urlValidationCache = new NodeCache({
@@ -19,12 +20,16 @@ const urlValidationCache = new NodeCache({
  * Useful for quick checks before starting the full referral generation process
  */
 export async function validateUrlStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const { jobUrl, apiKey } = req.body;
+  const { jobUrl } = req.body;
+  
+  // Get user ID if authenticated
+  const userId = req.user?._id?.toString();
   
   try {
-    logger.info(`Validating job URL: ${jobUrl}`);
+    logger.info(`Validating job URL: ${jobUrl}${userId ? ` (user: ${userId})` : ''}`);
     
-    const cacheKey = `url:${jobUrl}`;
+    // Use user ID in cache key if available
+    const cacheKey = userId ? `user:${userId}:url:${jobUrl}` : `url:${jobUrl}`;
     const cachedResult = urlValidationCache.get<UrlValidationCacheEntry>(cacheKey);
     
     if (cachedResult) {
@@ -38,7 +43,7 @@ export async function validateUrlStatus(req: Request, res: Response, next: NextF
           : 'URL is not accessible or valid',
         cached: true,
         cachedAt: cachedResult.timestamp,
-        apiKeyProvided: apiKey ? apiKey.trim().length > 0 : false
+        authenticated: !!userId
       });
       
       return;
@@ -48,7 +53,8 @@ export async function validateUrlStatus(req: Request, res: Response, next: NextF
     
     const cacheEntry: UrlValidationCacheEntry = {
       valid: isValid,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      userId
     };
     urlValidationCache.set(cacheKey, cacheEntry);
     
@@ -59,7 +65,7 @@ export async function validateUrlStatus(req: Request, res: Response, next: NextF
         ? 'URL is valid and accessible' 
         : 'URL is not accessible or valid',
       cached: false,
-      apiKeyProvided: apiKey ? apiKey.trim().length > 0 : false
+      authenticated: !!userId
     });
     
   } catch (error) {
