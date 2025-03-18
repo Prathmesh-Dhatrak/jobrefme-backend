@@ -13,6 +13,7 @@ interface SuccessfulJobCacheEntry {
   companyName: string;
   referralMessage: string;
   timestamp: number;
+  userId?: string;
 }
 
 interface FailedJobCacheEntry {
@@ -21,12 +22,14 @@ interface FailedJobCacheEntry {
   jobId: string;
   error: string;
   timestamp: number;
+  userId?: string;
 }
 
 interface ProcessingJobCacheEntry {
   status: 'processing';
   jobId: string;
   startedAt: number;
+  userId?: string;
 }
 
 type JobCacheEntry = SuccessfulJobCacheEntry | FailedJobCacheEntry | ProcessingJobCacheEntry;
@@ -44,16 +47,20 @@ const jobCache = new NodeCache({
  * 2. Full response with generated referral message
  */
 export async function generateReferral(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const { jobUrl, apiKey } = req.body;
+  const { jobUrl } = req.body;
   const startTime = Date.now();
   
+  // Get user ID if authenticated
+  const userId = req.user?._id?.toString();
+  
   try {
-    logger.info(`Processing referral request for HireJobs URL: ${jobUrl}`);
+    logger.info(`Processing referral request for HireJobs URL: ${jobUrl}${userId ? ` (user: ${userId})` : ''}`);
     
     const jobId = extractJobId(jobUrl);
     logger.info(`Job ID: ${jobId}`);
     
-    const cacheKey = apiKey ? `job:${jobId}:custom-key` : `job:${jobId}`;
+    // Use user ID in cache key if available
+    const cacheKey = userId ? `user:${userId}:job:${jobId}` : `job:${jobId}`;
     const cachedResult = jobCache.get<JobCacheEntry>(cacheKey);
     
     if (cachedResult && cachedResult.status === 'completed') {
@@ -74,7 +81,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
       const processingEntry: ProcessingJobCacheEntry = {
         status: 'processing',
         jobId,
-        startedAt: Date.now()
+        startedAt: Date.now(),
+        userId
       };
       jobCache.set(cacheKey, processingEntry);
       
@@ -97,7 +105,7 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             jobTitle,
             companyName,
             jobData.description,
-            apiKey
+            userId
           );
           
           const successEntry: SuccessfulJobCacheEntry = {
@@ -107,7 +115,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             jobTitle,
             companyName,
             referralMessage,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            userId
           };
           jobCache.set(cacheKey, successEntry);
           
@@ -122,7 +131,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
             success: false,
             jobId,
             error: errorMessage,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            userId
           };
           jobCache.set(cacheKey, errorEntry, 300);
         }
@@ -134,7 +144,8 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
       status: 'processing',
       message: 'Your request is being processed. Please wait a moment.',
       jobId,
-      estimatedTime: '5-10 seconds'
+      estimatedTime: '5-10 seconds',
+      authenticated: !!userId
     });
     
   } catch (error) {
@@ -150,12 +161,16 @@ export async function generateReferral(req: Request, res: Response, next: NextFu
  */
 export async function getGeneratedReferral(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { jobUrl, apiKey } = req.body;
+    const { jobUrl } = req.body;
+    
+    // Get user ID if authenticated
+    const userId = req.user?._id?.toString();
     
     const jobId = extractJobId(jobUrl);
-    logger.info(`Retrieving referral for job ID: ${jobId}`);
+    logger.info(`Retrieving referral for job ID: ${jobId}${userId ? ` (user: ${userId})` : ''}`);
     
-    const cacheKey = apiKey ? `job:${jobId}:custom-key` : `job:${jobId}`;
+    // Use user ID in cache key if available
+    const cacheKey = userId ? `user:${userId}:job:${jobId}` : `job:${jobId}`;
     const cachedResult = jobCache.get<JobCacheEntry>(cacheKey);
     
     if (!cachedResult) {
@@ -179,7 +194,8 @@ export async function getGeneratedReferral(req: Request, res: Response, next: Ne
         message: 'Your request is still being processed. Please try again in a moment.',
         jobId,
         processingTime: elapsedTime,
-        startedAt: cachedResult.startedAt
+        startedAt: cachedResult.startedAt,
+        authenticated: !!userId
       });
       return;
     }
@@ -192,7 +208,8 @@ export async function getGeneratedReferral(req: Request, res: Response, next: Ne
         companyName: cachedResult.companyName,
         jobId,
         cached: true,
-        cachedAt: cachedResult.timestamp
+        cachedAt: cachedResult.timestamp,
+        authenticated: !!userId
       });
       return;
     } else {
@@ -214,30 +231,33 @@ export async function clearReferralCache(req: Request, res: Response, next: Next
   try {
     const { jobUrl } = req.body;
     
+    // Get user ID if authenticated
+    const userId = req.user?._id?.toString();
+    
     const jobId = extractJobId(jobUrl);
-    logger.info(`Clearing cache for job ID: ${jobId}`);
+    logger.info(`Clearing cache for job ID: ${jobId}${userId ? ` (user: ${userId})` : ''}`);
     
-    // Clear both standard and custom API key cache entries
-    const standardCacheKey = `job:${jobId}`;
-    const customCacheKey = `job:${jobId}:custom-key`;
+    // Clear both authenticated and unauthenticated cache entries
+    const userCacheKey = userId ? `user:${userId}:job:${jobId}` : '';
+    const anonymousCacheKey = `job:${jobId}`;
     
-    const standardExists = jobCache.has(standardCacheKey);
-    const customExists = jobCache.has(customCacheKey);
+    let existed = false;
     
-    if (standardExists) {
-      jobCache.del(standardCacheKey);
+    if (userCacheKey && jobCache.has(userCacheKey)) {
+      jobCache.del(userCacheKey);
+      existed = true;
     }
     
-    if (customExists) {
-      jobCache.del(customCacheKey);
+    if (jobCache.has(anonymousCacheKey)) {
+      jobCache.del(anonymousCacheKey);
+      existed = true;
     }
-    
-    const existed = standardExists || customExists;
     
     res.status(200).json({
       success: true,
       message: existed ? `Cache cleared for job ID: ${jobId}` : `No cache entry found for job ID: ${jobId}`,
-      jobId
+      jobId,
+      authenticated: !!userId
     });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

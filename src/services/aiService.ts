@@ -1,6 +1,8 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../utils/logger';
 import NodeCache from 'node-cache';
+import User from '../models/userModel';
+import mongoose from 'mongoose';
 
 const CACHE_TTL = parseInt(process.env.CACHE_TTL || '3600', 10);
 const defaultApiKey = process.env.GEMINI_API_KEY || '';
@@ -26,8 +28,10 @@ if (defaultApiKey) {
 /**
  * Generate a cache key from job data
  */
-function generateCacheKey(jobTitle: string, companyName: string, descriptionHash: string): string {
-  return `${jobTitle.toLowerCase().trim()}:${companyName.toLowerCase().trim()}:${descriptionHash}`;
+function generateCacheKey(userId: string | undefined, jobTitle: string, companyName: string, descriptionHash: string): string {
+  return userId 
+    ? `user:${userId}:${jobTitle.toLowerCase().trim()}:${companyName.toLowerCase().trim()}:${descriptionHash}`
+    : `${jobTitle.toLowerCase().trim()}:${companyName.toLowerCase().trim()}:${descriptionHash}`;
 }
 
 /**
@@ -72,13 +76,48 @@ function initGeminiClient(apiKey: string): GoogleGenerativeAI {
 }
 
 /**
+ * Get user's API key or fallback to default
+ * @param userId User ID to retrieve API key for
+ * @returns API key as string or null if neither user nor default key is available
+ */
+async function getUserApiKey(userId: string | undefined): Promise<string | null> {
+  // If no user ID is provided, use default key
+  if (!userId) {
+    return defaultApiKey || null;
+  }
+  
+  try {
+    // Check if ID is valid MongoDB ObjectId
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      logger.warn(`Invalid user ID format: ${userId}`);
+      return defaultApiKey || null;
+    }
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      logger.warn(`User not found for ID: ${userId}`);
+      return defaultApiKey || null;
+    }
+    
+    // Try to get user's API key
+    const userApiKey = await user.getGeminiApiKey();
+    
+    // If user has no key, fall back to default
+    return userApiKey || defaultApiKey || null;
+  } catch (error) {
+    logger.error(`Error retrieving user API key: ${error instanceof Error ? error.message : String(error)}`);
+    return defaultApiKey || null;
+  }
+}
+
+/**
  * Generates a referral request message using Google Gemini API
  * with caching to avoid redundant API calls
  * 
  * @param jobTitle The job title
  * @param companyName The company name
  * @param jobDescription The job description
- * @param userApiKey Optional user-provided API key
+ * @param userId Optional user ID to use their stored API key
  * @returns Generated referral message
  * @throws Error if generation fails
  */
@@ -86,28 +125,25 @@ export async function generateReferralMessage(
   jobTitle: string,
   companyName: string,
   jobDescription: string,
-  userApiKey?: string
+  userId?: string
 ): Promise<string> {
   const descriptionPreview = jobDescription.slice(0, 1000);
   const descriptionHash = hashString(descriptionPreview);
 
-  const isUsingCustomKey = userApiKey && userApiKey.trim().length > 0;
-  const cacheKey = isUsingCustomKey
-    ? `custom:${generateCacheKey(jobTitle, companyName, descriptionHash)}`
-    : generateCacheKey(jobTitle, companyName, descriptionHash);
+  const cacheKey = generateCacheKey(userId, jobTitle, companyName, descriptionHash);
 
   const cachedMessage = messageCache.get<string>(cacheKey);
   if (cachedMessage) {
-    logger.info(`Cache hit for: ${jobTitle} at ${companyName}`);
+    logger.info(`Cache hit for: ${jobTitle} at ${companyName}${userId ? ` (user: ${userId})` : ''}`);
     return cachedMessage;
   }
 
-  logger.info(`Generating referral message for ${jobTitle} at ${companyName}`);
+  logger.info(`Generating referral message for ${jobTitle} at ${companyName}${userId ? ` (user: ${userId})` : ''}`);
 
-  const apiKey = userApiKey?.trim() || defaultApiKey;
+  const apiKey = await getUserApiKey(userId);
 
   if (!apiKey) {
-    throw new Error('No Gemini API key available. Please provide a valid API key.');
+    throw new Error('No Gemini API key available. Please add an API key in your account settings.');
   }
 
   const client = initGeminiClient(apiKey);
@@ -116,7 +152,7 @@ export async function generateReferralMessage(
   const modelName = 'gemini-1.5-flash';
 
   try {
-    logger.info(`Using model: ${modelName} with ${isUsingCustomKey ? 'user-provided' : 'default'} API key`);
+    logger.info(`Using model: ${modelName} with ${userId ? 'user' : 'default'} API key`);
 
     const model = client.getGenerativeModel({
       model: modelName,
@@ -151,24 +187,24 @@ export async function generateReferralMessage(
     logger.error(`Error with model ${modelName}: ${errorMessage}`);
 
     if (errorMessage.includes('API key not valid')) {
-      throw new Error('The provided API key is not valid. Please check your API key and try again.');
+      throw new Error('The API key is not valid. Please check your API key settings and try again.');
     } else if (errorMessage.includes('quota')) {
-      throw new Error('API quota exceeded. Please try again later or use a different API key.');
+      throw new Error('API quota exceeded. Please try again later or update your API key in settings.');
     } else {
       throw new Error(`Failed to generate referral message: ${errorMessage}`);
     }
   }
 }
 
-  /**
-   * Creates the AI prompt from the template
-   */
-  function createPrompt(
-    jobTitle: string,
-    companyName: string,
-    jobDescription: string
-  ): string {
-    return `
+/**
+ * Creates the AI prompt from the template
+ */
+function createPrompt(
+  jobTitle: string,
+  companyName: string,
+  jobDescription: string
+): string {
+  return `
 You are tasked with creating a professional and personalized referral request message.
 
 JOB POSTING DETAILS:
@@ -210,4 +246,4 @@ Prathmesh Dhatrak
 
 FORMAT YOUR RESPONSE EXACTLY AS THE TEMPLATE ABOVE WITH ONLY THE SKILLS SECTION CUSTOMIZED.
   `;
-  }
+}
