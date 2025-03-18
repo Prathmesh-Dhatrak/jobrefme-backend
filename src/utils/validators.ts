@@ -23,6 +23,7 @@ export function validateJobUrlRequest(req: Request, _res: Response, next: NextFu
     return next(new ApiError(400, 'Only HireJobs.in URLs are supported'));
   }
   
+  // Only validate the API key if it's provided (now optional)
   if (req.body.apiKey !== undefined) {
     if (typeof req.body.apiKey !== 'string') {
       return next(new ApiError(400, 'API key must be a string'));
@@ -84,4 +85,4 @@ export function isValidApiKeyFormat(ApiKey: string): boolean {
   }
   
   return true;
-} 
+}

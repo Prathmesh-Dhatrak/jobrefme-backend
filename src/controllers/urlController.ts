@@ -3,6 +3,7 @@ import { logger } from '../utils/logger';
 import { validateUrlAccessibility } from '../utils/urlValidator';
 import { ApiError } from '../utils/errorHandler';
 import NodeCache from 'node-cache';
+import User, { IUser } from '../models/User';
 
 interface UrlValidationCacheEntry {
   valid: boolean;
@@ -19,13 +20,24 @@ const urlValidationCache = new NodeCache({
  * Useful for quick checks before starting the full referral generation process
  */
 export async function validateUrlStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
-  const { jobUrl, apiKey } = req.body;
+  const { jobUrl } = req.body;
   
   try {
     logger.info(`Validating job URL: ${jobUrl}`);
     
     const cacheKey = `url:${jobUrl}`;
     const cachedResult = urlValidationCache.get<UrlValidationCacheEntry>(cacheKey);
+    
+    // Check if user is authenticated
+    const isAuthenticated = Boolean(req.user);
+    let usingStoredApiKey = false;
+    
+    // If user is authenticated, check if they have a stored API key
+    if (isAuthenticated) {
+      const user = req.user as IUser;
+      const userWithApiKey = await User.findById(user._id).select('+apiKeys.gemini');
+      usingStoredApiKey = Boolean(userWithApiKey?.apiKeys?.gemini);
+    }
     
     if (cachedResult) {
       logger.info(`Using cached URL validation result for ${jobUrl}: ${cachedResult.valid}`);
@@ -38,7 +50,9 @@ export async function validateUrlStatus(req: Request, res: Response, next: NextF
           : 'URL is not accessible or valid',
         cached: true,
         cachedAt: cachedResult.timestamp,
-        apiKeyProvided: apiKey ? apiKey.trim().length > 0 : false
+        isAuthenticated,
+        usingStoredApiKey,
+        usingCustomApiKey: Boolean(req.body.apiKey)
       });
       
       return;
@@ -59,7 +73,9 @@ export async function validateUrlStatus(req: Request, res: Response, next: NextF
         ? 'URL is valid and accessible' 
         : 'URL is not accessible or valid',
       cached: false,
-      apiKeyProvided: apiKey ? apiKey.trim().length > 0 : false
+      isAuthenticated,
+      usingStoredApiKey,
+      usingCustomApiKey: Boolean(req.body.apiKey)
     });
     
   } catch (error) {
