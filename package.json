@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "test": "jest",
-    "lint": "eslint src/**/*.ts"
+    "lint": "eslint src/**/*.ts",
+    "create-default-template": "ts-node src/scripts/createDefaultTemplate.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
