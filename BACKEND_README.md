@@ -188,21 +188,34 @@ Retrieves the generated referral message.
 ```
 POST /api/v1/clear-cache
 ```
-Clears the cached referral message for a specific job URL.
+Clears the cached referral message for a specific job URL or all cached entries.
 
-**Request:**
+**Request (for specific job):**
 ```json
 {
   "jobUrl": "https://hirejobs.in/jobs/abc123"
 }
 ```
-
-**Response:**
+**Request (to clear all cache):**
+```json
+{
+  "jobUrl": "all"
+}
+```
+**Response (for specific job):**
 ```json
 {
   "success": true,
   "message": "Cache cleared for job ID: abc123",
   "jobId": "abc123",
+  "authenticated": true
+}
+```
+**Response (for all cache):**
+```json
+{
+  "success": true,
+  "message": "All cache entries cleared (42 entries)",
   "authenticated": true
 }
 ```

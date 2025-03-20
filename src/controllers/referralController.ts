@@ -234,6 +234,21 @@ export async function clearReferralCache(req: Request, res: Response, next: Next
     // Get user ID if authenticated
     const userId = req.user?._id?.toString();
     
+    // Special case: clear all cache entries
+    if (jobUrl === 'all') {
+      logger.info(`Clearing all cache entries${userId ? ` (requested by user: ${userId})` : ''}`);
+      
+      const keysCount = jobCache.keys().length;
+      jobCache.flushAll();
+      
+      res.status(200).json({
+        success: true,
+        message: `All cache entries cleared (${keysCount} entries)`,
+        authenticated: !!userId
+      });
+      return;
+    }
+    
     const jobId = extractJobId(jobUrl);
     logger.info(`Clearing cache for job ID: ${jobId}${userId ? ` (user: ${userId})` : ''}`);
     

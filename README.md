@@ -39,21 +39,17 @@ Retrieves the authenticated user's profile information.
 
 **Response:**
 ```json
-{
-  "success": true,
-  "data": {
-    "id": "user_id",
-    "googleId": "google_id",
-    "email": "user@example.com",
-    "displayName": "User Name",
-    "firstName": "User",
-    "lastName": "Name",
-    "profilePhoto": "https://profile-photo-url.com",
-    "hasGeminiApiKey": true,
-    "role": "user",
-    "lastLogin": "2025-03-18T12:00:00.000Z",
-    "createdAt": "2025-03-18T12:00:00.000Z"
-  }
+"data": {
+  "id": "user_id",
+  "googleId": "google_id",
+  "email": "user@example.com",
+  "displayName": "User Name",
+  "firstName": "User",
+  "lastName": "Name",
+  "profilePhoto": "https://profile-photo-url.com",
+  "hasGeminiApiKey": true,
+  "lastLogin": "2025-03-18T12:00:00.000Z",
+  "createdAt": "2025-03-18T12:00:00.000Z"
 }
 ```
 
@@ -192,21 +188,34 @@ Retrieves the generated referral message.
 ```
 POST /api/v1/clear-cache
 ```
-Clears the cached referral message for a specific job URL.
+Clears the cached referral message for a specific job URL or all cached entries.
 
-**Request:**
+**Request (for specific job):**
 ```json
 {
   "jobUrl": "https://hirejobs.in/jobs/abc123"
 }
 ```
-
-**Response:**
+**Request (to clear all cache):**
+```json
+{
+  "jobUrl": "all"
+}
+```
+**Response (for specific job):**
 ```json
 {
   "success": true,
   "message": "Cache cleared for job ID: abc123",
   "jobId": "abc123",
+  "authenticated": true
+}
+```
+**Response (for all cache):**
+```json
+{
+  "success": true,
+  "message": "All cache entries cleared (42 entries)",
   "authenticated": true
 }
 ```
