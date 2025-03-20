@@ -2,8 +2,11 @@ import { Router } from 'express';
 import { generateReferral, getGeneratedReferral, clearReferralCache } from '../controllers/referralController';
 import { validateJobUrlRequest, validateClearCacheRequest } from '../utils/validators';
 import { validateUrlStatus } from '../controllers/urlController';
+import { protect } from '../middleware/authMiddleware';
 
 const router = Router();
+
+router.use(protect);
 
 router.post('/validate-job-url', validateJobUrlRequest, validateUrlStatus);
 
