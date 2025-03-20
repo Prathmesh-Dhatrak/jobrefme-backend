@@ -45,8 +45,8 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // API routes
-app.use('/api/v1', referralRoutes);
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1', referralRoutes);
 app.use('/api/v1/user', apiKeyRoutes);
 app.use('/api/v1/user', templateRoutes);
 
