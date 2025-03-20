@@ -27,6 +27,37 @@ export function validateJobUrlRequest(req: Request, _res: Response, next: NextFu
 }
 
 /**
+ * Validates job URL request for cache clearing
+ * Allows both valid HireJobs URLs and the special 'all' value
+ */
+export function validateClearCacheRequest(req: Request, _res: Response, next: NextFunction) {
+  const { jobUrl } = req.body;
+  
+  if (!jobUrl) {
+    return next(new ApiError(400, 'Job URL is required'));
+  }
+
+  if (typeof jobUrl !== 'string') {
+    return next(new ApiError(400, 'Job URL must be a string'));
+  }
+
+  // Special case for clearing all cache
+  if (jobUrl === 'all') {
+    return next();
+  }
+
+  if (!isValidUrl(jobUrl)) {
+    return next(new ApiError(400, 'Invalid URL format'));
+  }
+  
+  if (!isHireJobsUrl(jobUrl)) {
+    return next(new ApiError(400, 'Only HireJobs.in URLs are supported'));
+  }
+  
+  next();
+}
+
+/**
  * Validates if string is a valid URL
  */
 export function isValidUrl(url: string): boolean {
