@@ -9,6 +9,7 @@ import { errorHandler } from './utils/errorHandler';
 import referralRoutes from './routes/referralRoutes';
 import authRoutes from './routes/authRoutes';
 import apiKeyRoutes from './routes/apiKeyRoutes';
+import templateRoutes from './routes/templateRoutes';
 import { configurePassport } from './config/passport';
 
 const app = express();
@@ -47,6 +48,7 @@ app.use(passport.session());
 app.use('/api/v1', referralRoutes);
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/user', apiKeyRoutes);
+app.use('/api/v1/user', templateRoutes);
 
 app.get('/health', (_req, res) => {
   res.status(200).json({ 

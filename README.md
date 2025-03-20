@@ -13,6 +13,7 @@ A Node.js backend service that powers JobRefMe, an intelligent application that 
 - **Performance Optimizations**: Implements caching for faster response times and reduced API costs
 - **Fault Tolerance**: Gracefully handles scraping failures with fallbacks
 - **Comprehensive Error Handling**: Provides clear, actionable error messages
+- **Template Management**: Customize and store referral message templates
 - **API Documentation**: Well-defined API endpoints for easy integration
 
 ## 📋 API Endpoints
@@ -103,6 +104,161 @@ Deletes the user's Gemini API key.
 {
   "success": true,
   "message": "Gemini API key deleted successfully"
+}
+```
+
+### Template Management
+
+#### Get All Templates
+```
+GET /api/v1/user/templates
+```
+Retrieves all templates available to the user (personal templates and system defaults).
+
+**Response:**
+```json
+{
+  "success": true,
+  "count": 2,
+  "data": [
+    {
+      "_id": "template_id_1",
+      "name": "My Custom Template",
+      "content": "Applying for {jobTitle} at {companyName}...",
+      "isDefault": true,
+      "userId": "user_id",
+      "createdAt": "2025-03-18T12:00:00.000Z",
+      "updatedAt": "2025-03-18T12:00:00.000Z"
+    },
+    {
+      "_id": "template_id_2",
+      "name": "System Default Template",
+      "content": "Applying for {jobTitle} at {companyName}...",
+      "isDefault": true,
+      "createdAt": "2025-03-18T12:00:00.000Z",
+      "updatedAt": "2025-03-18T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+#### Create New Template
+```
+POST /api/v1/user/templates
+```
+Creates a new template for the authenticated user.
+
+**Request:**
+```json
+{
+  "name": "My Custom Template",
+  "content": "Applying for {jobTitle} at {companyName}...",
+  "isDefault": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "template_id",
+    "name": "My Custom Template",
+    "content": "Applying for {jobTitle} at {companyName}...",
+    "isDefault": true,
+    "userId": "user_id",
+    "createdAt": "2025-03-18T12:00:00.000Z",
+    "updatedAt": "2025-03-18T12:00:00.000Z"
+  }
+}
+```
+
+#### Get Default Template
+```
+GET /api/v1/user/templates/default
+```
+Retrieves the user's default template or the system default if none is set.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "template_id",
+    "name": "My Default Template",
+    "content": "Applying for {jobTitle} at {companyName}...",
+    "isDefault": true,
+    "userId": "user_id",
+    "createdAt": "2025-03-18T12:00:00.000Z",
+    "updatedAt": "2025-03-18T12:00:00.000Z"
+  }
+}
+```
+
+#### Get Template by ID
+```
+GET /api/v1/user/templates/:id
+```
+Retrieves a specific template by ID.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "template_id",
+    "name": "My Custom Template",
+    "content": "Applying for {jobTitle} at {companyName}...",
+    "isDefault": false,
+    "userId": "user_id",
+    "createdAt": "2025-03-18T12:00:00.000Z",
+    "updatedAt": "2025-03-18T12:00:00.000Z"
+  }
+}
+```
+
+#### Update Template
+```
+PUT /api/v1/user/templates/:id
+```
+Updates a specific template.
+
+**Request:**
+```json
+{
+  "name": "Updated Template Name",
+  "content": "Updated template content for {jobTitle} at {companyName}...",
+  "isDefault": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "_id": "template_id",
+    "name": "Updated Template Name",
+    "content": "Updated template content for {jobTitle} at {companyName}...",
+    "isDefault": true,
+    "userId": "user_id",
+    "createdAt": "2025-03-18T12:00:00.000Z",
+    "updatedAt": "2025-03-18T12:00:00.000Z"
+  }
+}
+```
+
+#### Delete Template
+```
+DELETE /api/v1/user/templates/:id
+```
+Deletes a template.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {}
 }
 ```
 
@@ -304,12 +460,17 @@ GET /health
      - `https://your-domain.fly.dev/api/v1/auth/google/callback` (for production)
    - Copy the Client ID and Client Secret to your `.env` file
 
-6. Build the TypeScript code:
+6. Initialize the default template:
+   ```bash
+   npm run create-default-template
+   ```
+
+7. Build the TypeScript code:
    ```bash
    npm run build
    ```
 
-7. Start the server:
+8. Start the server:
    ```bash
    npm start
    ```
@@ -318,82 +479,6 @@ For development with hot reloading:
 ```bash
 npm run dev
 ```
-
-## 🔒 Chrome Extension Authentication
-
-For Chrome Extension authentication, follow these steps:
-
-1. Create an auth-callback.html page in your extension:
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Authentication Complete</title>
-  <script src="auth-callback.js"></script>
-</head>
-<body>
-  <h1>Authentication Successful</h1>
-  <p>You can close this window and return to the extension.</p>
-</body>
-</html>
-```
-
-2. Create auth-callback.js:
-```javascript
-document.addEventListener('DOMContentLoaded', function() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const token = urlParams.get('token');
-  
-  if (token) {
-    chrome.storage.local.set({ 'authToken': token }, function() {
-      console.log('Token stored, authentication complete');
-      setTimeout(() => window.close(), 3000);
-    });
-  }
-});
-```
-
-3. Update your extension's manifest.json:
-```json
-{
-  "web_accessible_resources": [{
-    "resources": ["auth-callback.html"],
-    "matches": ["<all_urls>"]
-  }]
-}
-```
-
-4. Initiate authentication:
-```javascript
-function startAuth() {
-  const authURL = 'https://your-backend.fly.dev/api/v1/auth/google';
-  const returnUrl = chrome.runtime.getURL('auth-callback.html');
-  chrome.tabs.create({ 
-    url: `${authURL}?returnUrl=${encodeURIComponent(returnUrl)}` 
-  });
-}
-```
-
-5. Make authenticated API calls:
-```javascript
-async function fetchWithAuth(url, options = {}) {
-  const result = await chrome.storage.local.get('authToken');
-  const token = result.authToken;
-  
-  if (!token) {
-    throw new Error('Not authenticated');
-  }
-  
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      'Authorization': `Bearer ${token}`
-    }
-  });
-}
-```
-
 ## 🚢 Deployment
 
 The application is configured for deployment on Fly.io:

@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../utils/logger';
 import NodeCache from 'node-cache';
 import User from '../models/userModel';
+import Template from '../models/templateModel';
 import mongoose from 'mongoose';
 
 const CACHE_TTL = parseInt(process.env.CACHE_TTL || '3600', 10);
@@ -127,9 +128,10 @@ export async function generateReferralMessage(
   jobDescription: string,
   userId?: string
 ): Promise<string> {
+  const templateContent = await getActiveTemplate(userId);
+
   const descriptionPreview = jobDescription.slice(0, 1000);
   const descriptionHash = hashString(descriptionPreview);
-
   const cacheKey = generateCacheKey(userId, jobTitle, companyName, descriptionHash);
 
   const cachedMessage = messageCache.get<string>(cacheKey);
@@ -148,7 +150,7 @@ export async function generateReferralMessage(
 
   const client = initGeminiClient(apiKey);
 
-  const prompt = createPrompt(jobTitle, companyName, jobDescription);
+  const prompt = createPrompt(jobTitle, companyName, jobDescription, templateContent);
   const modelName = 'gemini-1.5-flash';
 
   try {
@@ -202,7 +204,8 @@ export async function generateReferralMessage(
 function createPrompt(
   jobTitle: string,
   companyName: string,
-  jobDescription: string
+  jobDescription: string,
+  template: string
 ): string {
   return `
 You are tasked with creating a professional and personalized referral request message.
@@ -215,35 +218,62 @@ Job Description:
 ${jobDescription}
 ---
 
+TEMPLATE:
+${template}
+
 INSTRUCTIONS:
 1. Analyze the job description and identify key skills or qualifications needed for this position.
-2. Create a professionally-worded message in EXACTLY the following format:
+2. Create a professionally-worded message following the provided template.
+3. Replace {jobTitle} with "${jobTitle}", {companyName} with "${companyName}", and {skills} with 3 of the most relevant skills from the job description.
+4. Keep the structure and format of the template, only replacing the placeholder variables.
+5. DO NOT mention "HireJobs" or any job board website in your message.
+6. Keep any existing formatting and structure from the template.
+`;
+}
 
-Applying for ${jobTitle} at ${companyName}
+/**
+ * Retrieves the active template for the given user ID
+ * @param userId Optional user ID
+ * @returns Template content as string
+ */
+async function getActiveTemplate(userId?: string): Promise<string> {
+  let template;
+  if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+    template = await Template.findOne({
+      userId,
+      isDefault: true
+    });
+  }
+  if (!template) {
+    template = await Template.findOne({
+      userId: { $exists: false },
+      isDefault: true
+    });
+  }
+
+  if (!template) {
+    return `
+Applying for {jobTitle} at {companyName}
 
 Hey [RECIPIENT],
 
-I'm Prathmesh Dhatrak, a fullstack developer with expertise in [REPLACE WITH 3 RELEVANT SKILLS FROM JOB DESCRIPTION], and I'm reaching out about the ${jobTitle} role at ${companyName} ([JOB POST LINK]). Given your connection to the company, I wanted to ask if you would consider helping me with a referral.
+I'm a skilled developer with expertise in {skills}, and I'm reaching out about the {jobTitle} role at {companyName} ([JOB POST LINK]). Given your connection to the company, I wanted to ask if you would consider helping me with a referral.
 
 Work that I am most proud of:
-- At Copods, I built a comprehensive Candidate Evaluation and HR dashboard
-- InVideo (https://tinyurl.com/pd-ivsr): Engineered a user-friendly screen recording web app with React, TypeScript, and Rust-WASM, optimized with serverless AWS architecture
+- Developed a comprehensive dashboard application for performance monitoring
+- Built a user-friendly web application with modern frontend technologies
+- Contributed to open-source projects focused on developer productivity
 
-Beyond professional experience, I've created engaging personal projects (Cinemagram, Friend-Zone) which are all deployed and available to view.
+Beyond professional experience, I've created several personal projects which demonstrate my abilities and passion for technology.
 
-My resume and portfolio provide further details:
-Resume: https://tinyurl.com/pd-ivrs
-Portfolio: prathmeshdhatrak.com
+My resume and portfolio provide further details about my experience and skills.
 
 Your time and consideration would mean a lot to me. Would you be open to referring me for this position?
 
 Thank you,
-Prathmesh Dhatrak
-
-3. IMPORTANT: The only part you should modify is the "[REPLACE WITH 3 RELEVANT SKILLS FROM JOB DESCRIPTION]" section, where you should list 3 key skills or technologies mentioned in the job description.
-4. DO NOT change any other placeholders or text in the template.
-5. DO NOT mention "HireJobs" or any job board website in your message.
-
-FORMAT YOUR RESPONSE EXACTLY AS THE TEMPLATE ABOVE WITH ONLY THE SKILLS SECTION CUSTOMIZED.
-  `;
+[YOUR NAME]
+    `;
+  }
+  
+  return template.content;
 }
