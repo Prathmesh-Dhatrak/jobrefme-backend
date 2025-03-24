@@ -4,6 +4,7 @@ import NodeCache from 'node-cache';
 import User from '../models/userModel';
 import Template from '../models/templateModel';
 import mongoose from 'mongoose';
+import { JobData } from '../types/types';
 
 const CACHE_TTL = parseInt(process.env.CACHE_TTL || '3600', 10);
 const defaultApiKey = process.env.GEMINI_API_KEY || '';
@@ -276,4 +277,162 @@ Thank you,
   }
   
   return template.content;
+}
+
+
+/**
+ * Extracts structured job details from raw job posting text using Gemini AI
+ * 
+ * @param jobContent Raw job posting text
+ * @param userId Optional user ID to use their stored API key
+ * @returns JobData object with extracted title, company, and description
+ * @throws Error if extraction fails
+ */
+export async function extractJobDetailsFromContent(
+  jobContent: string,
+  userId?: string
+): Promise<JobData> {
+  logger.info(`Extracting job details from raw content${userId ? ` (user: ${userId})` : ''}`);
+  
+  const contentPreview = jobContent.slice(0, 1000);
+  const contentHash = hashString(contentPreview);
+  const cacheKey = `extract:${userId || 'anon'}:${contentHash}`;
+  
+  const cachedResult = messageCache.get<JobData>(cacheKey);
+  if (cachedResult) {
+    logger.info(`Cache hit for job content extraction`);
+    return cachedResult;
+  }
+  
+  const apiKey = await getUserApiKey(userId);
+  
+  if (!apiKey) {
+    throw new Error('No Gemini API key available. Please add an API key in your account settings.');
+  }
+  
+  const client = initGeminiClient(apiKey);
+  
+  const prompt = createExtractionPrompt(jobContent);
+  const modelName = 'gemini-1.5-flash';
+  
+  try {
+    logger.info(`Using model: ${modelName} for job detail extraction`);
+    
+    const model = client.getGenerativeModel({
+      model: modelName,
+      generationConfig: {
+        temperature: 0.2,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1024,
+      },
+    });
+    
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    
+    try {
+      const parsedResult = parseAIResponse(text);
+      
+      if (!parsedResult.title || parsedResult.title.length < 3) {
+        throw new Error('Could not extract valid job title');
+      }
+      
+      if (!parsedResult.company || parsedResult.company.length < 2) {
+        throw new Error('Could not extract valid company name');
+      }
+      
+      if (!parsedResult.description || parsedResult.description.length < 100) {
+        throw new Error('Could not extract sufficient job description');
+      }
+      
+      const jobData: JobData = {
+        title: parsedResult.title.replace(/hirejobs/gi, '').trim(),
+        company: parsedResult.company.replace(/hirejobs/gi, '').trim(),
+        description: parsedResult.description
+      };
+      
+      messageCache.set(cacheKey, jobData);
+      
+      logger.info(`Successfully extracted job details: ${jobData.title} at ${jobData.company}`);
+      return jobData;
+    } catch (parseError) {
+      logger.error(`Error parsing AI response: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+      throw new Error('Failed to extract structured job data from content');
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error(`Error with model ${modelName} during extraction: ${errorMessage}`);
+    
+    if (errorMessage.includes('API key not valid')) {
+      throw new Error('The API key is not valid. Please check your API key settings and try again.');
+    } else if (errorMessage.includes('quota')) {
+      throw new Error('API quota exceeded. Please try again later or update your API key in settings.');
+    } else {
+      throw new Error(`Failed to extract job details: ${errorMessage}`);
+    }
+  }
+}
+
+/**
+ * Creates a prompt for the AI to extract job details
+ */
+function createExtractionPrompt(jobContent: string): string {
+  return `
+You are a specialized AI assistant tasked with extracting structured information from job postings.
+
+JOB POSTING CONTENT:
+---
+${jobContent}
+---
+
+INSTRUCTIONS:
+1. Extract the job title, company name, and a comprehensive job description from the provided content.
+2. Format your response as a structured JSON object with keys: "title", "company", and "description".
+3. For the description, include all important details from the job posting, including responsibilities, requirements, qualifications, benefits, etc.
+4. Ensure the description is comprehensive and well-structured with proper paragraphs.
+5. Remove any references to job boards like "HireJobs" from all fields.
+6. Make sure to capture the skills, requirements, and responsibilities accurately.
+
+RESPONSE FORMAT:
+{
+  "title": "The extracted job title",
+  "company": "The company name",
+  "description": "A comprehensive, well-structured description that includes all important details from the job posting"
+}
+
+Only provide the JSON object as your response, nothing else before or after.
+`;
+}
+
+/**
+ * Parses the AI response to extract structured job data
+ */
+function parseAIResponse(aiResponse: string): JobData {
+  const jsonStr = aiResponse
+    .replace(/^```json/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  
+  try {
+    const parsed = JSON.parse(jsonStr);
+    
+    return {
+      title: parsed.title || '',
+      company: parsed.company || '',
+      description: parsed.description || ''
+    };
+  } catch (error) {
+    logger.error(`JSON parsing error: ${error instanceof Error ? error.message : String(error)}`);
+    
+    const titleMatch = aiResponse.match(/title["\s:]+([^"]+)/i);
+    const companyMatch = aiResponse.match(/company["\s:]+([^"]+)/i);
+    const descriptionMatch = aiResponse.match(/description["\s:]+([^"]+)/i);
+    
+    return {
+      title: titleMatch ? titleMatch[1].trim() : '',
+      company: companyMatch ? companyMatch[1].trim() : '',
+      description: descriptionMatch ? descriptionMatch[1].trim() : ''
+    };
+  }
 }

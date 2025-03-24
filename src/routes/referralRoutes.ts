@@ -1,6 +1,11 @@
 import { Router } from 'express';
-import { generateReferral, getGeneratedReferral, clearReferralCache } from '../controllers/referralController';
-import { validateJobUrlRequest, validateClearCacheRequest } from '../utils/validators';
+import { 
+  generateReferral, 
+  getGeneratedReferral, 
+  clearReferralCache,
+  processRawJobContent
+} from '../controllers/referralController';
+import { validateJobUrlRequest, validateClearCacheRequest, validateJobContentRequest } from '../utils/validators';
 import { validateUrlStatus } from '../controllers/urlController';
 import { protect } from '../middleware/authMiddleware';
 
@@ -10,5 +15,7 @@ router.post('/validate-job-url', protect, validateJobUrlRequest, validateUrlStat
 router.post('/generate-referral', protect, validateJobUrlRequest, generateReferral);
 router.post('/generate-referral/result', protect, validateJobUrlRequest, getGeneratedReferral);
 router.post('/clear-cache', protect, validateClearCacheRequest, clearReferralCache);
+
+router.post('/generate-referral/content', protect, validateJobContentRequest, processRawJobContent);
 
 export default router;

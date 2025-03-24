@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { scrapeJobPosting } from '../services/crawlerService';
-import { generateReferralMessage } from '../services/aiService';
+import { generateReferralMessage, extractJobDetailsFromContent } from '../services/aiService';
 import { ApiError } from '../utils/errorHandler';
 import NodeCache from 'node-cache';
 
@@ -224,18 +224,18 @@ export async function getGeneratedReferral(req: Request, res: Response, next: Ne
 }
 
 /**
- * Clears the cache for a specific job ID
+ * Clears the cache for a specific job ID, URL, or content
  * Useful when a job posting has been updated or when forcing a refresh
  */
 export async function clearReferralCache(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const { jobUrl } = req.body;
+    const { jobUrl, jobContent, jobId } = req.body;
     
     // Get user ID if authenticated
     const userId = req.user?._id?.toString();
     
     // Special case: clear all cache entries
-    if (jobUrl === 'all') {
+    if (jobUrl === 'all' || jobContent === 'all' || jobId === 'all') {
       logger.info(`Clearing all cache entries${userId ? ` (requested by user: ${userId})` : ''}`);
       
       const keysCount = jobCache.keys().length;
@@ -249,12 +249,28 @@ export async function clearReferralCache(req: Request, res: Response, next: Next
       return;
     }
     
-    const jobId = extractJobId(jobUrl);
-    logger.info(`Clearing cache for job ID: ${jobId}${userId ? ` (user: ${userId})` : ''}`);
+    let requestJobId = '';
+    let cacheType = 'job';
+    
+    if (jobId) {
+      requestJobId = jobId;
+      cacheType = jobId.startsWith('content_') ? 'content' : 'job';
+      logger.info(`Clearing cache using provided job ID: ${requestJobId}${userId ? ` (user: ${userId})` : ''}`);
+    } else if (jobUrl) {
+      requestJobId = extractJobId(jobUrl);
+      cacheType = 'job';
+      logger.info(`Clearing cache for job URL ID: ${requestJobId}${userId ? ` (user: ${userId})` : ''}`);
+    } else if (jobContent) {
+      requestJobId = createHashFromContent(jobContent);
+      cacheType = 'content';
+      logger.info(`Clearing cache for job content hash: ${requestJobId}${userId ? ` (user: ${userId})` : ''}`);
+    } else {
+      throw new ApiError(400, 'Either jobUrl, jobContent, or jobId is required');
+    }
     
     // Clear both authenticated and unauthenticated cache entries
-    const userCacheKey = userId ? `user:${userId}:job:${jobId}` : '';
-    const anonymousCacheKey = `job:${jobId}`;
+    const userCacheKey = userId ? `user:${userId}:${cacheType}:${requestJobId}` : '';
+    const anonymousCacheKey = `${cacheType}:${requestJobId}`;
     
     let existed = false;
     
@@ -270,8 +286,9 @@ export async function clearReferralCache(req: Request, res: Response, next: Next
     
     res.status(200).json({
       success: true,
-      message: existed ? `Cache cleared for job ID: ${jobId}` : `No cache entry found for job ID: ${jobId}`,
-      jobId,
+      message: existed ? `Cache cleared for ${cacheType} ID: ${requestJobId}` : `No cache entry found for ${cacheType} ID: ${requestJobId}`,
+      jobId: requestJobId,
+      cacheType,
       authenticated: !!userId
     });
   } catch (error) {
@@ -289,5 +306,117 @@ function extractJobId(url: string): string {
     return url.split('/').pop() || 'unknown';
   } catch (error) {
     return 'unknown';
+  }
+}
+
+/**
+ * Processes raw job posting content and generates a referral message
+ * This endpoint allows users to submit job posting text directly rather than a URL
+ * Returns the generated referral message immediately in a single request
+ */
+export async function processRawJobContent(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const { jobContent } = req.body;
+  const startTime = Date.now();
+  
+  const userId = req.user?._id?.toString();
+  
+  try {
+    logger.info(`Processing raw job content request${userId ? ` (user: ${userId})` : ''}`);
+    
+    const jobContentHash = createHashFromContent(jobContent);
+    logger.info(`Job content hash: ${jobContentHash}`);
+    
+    const cacheKey = userId ? `user:${userId}:content:${jobContentHash}` : `content:${jobContentHash}`;
+    const cachedResult = jobCache.get<SuccessfulJobCacheEntry>(cacheKey);
+    
+    if (cachedResult && cachedResult.status === 'completed' && cachedResult.success) {
+      logger.info(`Found completed result for job content hash: ${jobContentHash}`);
+      
+      res.status(200).json({
+        success: true,
+        referralMessage: cachedResult.referralMessage,
+        jobTitle: cachedResult.jobTitle,
+        companyName: cachedResult.companyName,
+        jobId: jobContentHash,
+        cached: true,
+        cachedAt: cachedResult.timestamp,
+        authenticated: !!userId
+      });
+      
+      return;
+    }
+    
+    logger.info(`No cache found for ${jobContentHash}. Processing content...`);
+    
+    const jobData = await extractJobDetailsFromContent(jobContent, userId);
+
+    let jobTitle = jobData.title.trim();
+    let companyName = jobData.company.trim();
+    
+    if (jobTitle.includes(' at ')) {
+      const titleParts = jobTitle.split(' at ');
+      jobTitle = titleParts[0].trim();
+      if (!companyName || companyName === 'the company') {
+        companyName = titleParts[1].trim();
+      }
+    }
+    
+    const referralMessage = await generateReferralMessage(
+      jobTitle,
+      companyName,
+      jobData.description,
+      userId
+    );
+    
+    const successEntry: SuccessfulJobCacheEntry = {
+      status: 'completed',
+      success: true,
+      jobId: jobContentHash,
+      jobTitle,
+      companyName,
+      referralMessage,
+      timestamp: Date.now(),
+      userId
+    };
+    jobCache.set(cacheKey, successEntry);
+    
+    const processingTime = Date.now() - startTime;
+    logger.info(`Referral generation for content hash ${jobContentHash} completed in ${processingTime}ms`);
+    
+    res.status(200).json({
+      success: true,
+      referralMessage,
+      jobTitle,
+      companyName,
+      jobId: jobContentHash,
+      processingTime,
+      cached: false,
+      authenticated: !!userId
+    });
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Error processing job content: ${errorMessage}`);
+    next(error instanceof Error ? error : new Error(errorMessage));
+  }
+}
+
+/**
+ * Creates a hash from job content for caching purposes
+ */
+function createHashFromContent(content: string): string {
+  try {
+    let hash = 0;
+    const normalizedContent = content.trim().substring(0, 1000);
+    
+    for (let i = 0; i < normalizedContent.length; i++) {
+      const char = normalizedContent.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    
+    return `content_${Math.abs(hash)}`;
+  } catch (error) {
+    return `content_${Date.now()}`;
   }
 }

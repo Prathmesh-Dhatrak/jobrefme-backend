@@ -1,12 +1,13 @@
 # JobRefMe Backend
 
-A Node.js backend service that powers JobRefMe, an intelligent application that generates personalized job referral request messages based on job postings from HireJobs.in.
+A Node.js backend service that powers JobRefMe, an intelligent application that generates personalized job referral request messages based on job postings from HireJobs.in or raw job content.
 
 [![Fly Deploy](https://github.com/Prathmesh-Dhatrak/jobrefme-backend/actions/workflows/fly-deploy.yml/badge.svg)](https://github.com/Prathmesh-Dhatrak/jobrefme-backend/actions/workflows/fly-deploy.yml)
 
 ## 🚀 Features
 
 - **Job Posting Extraction**: Scrapes job details from HireJobs.in using Playwright and Crawlee
+- **Raw Job Content Processing**: Process job content directly without requiring a URL
 - **Smart Referral Generation**: Uses Google's Gemini AI to create tailored referral request messages
 - **Google OAuth Authentication**: Secure login integration for Chrome extension users
 - **Secure API Key Storage**: Store your Gemini API key securely within your account
@@ -288,11 +289,11 @@ Quickly checks if a job URL is valid and accessible.
 }
 ```
 
-#### Generate Referral
+#### Generate Referral from URL
 ```
 POST /api/v1/generate-referral
 ```
-Initiates the referral message generation process for a job posting.
+Initiates the referral message generation process for a job posting URL.
 
 **Request:**
 ```json
@@ -313,11 +314,54 @@ Initiates the referral message generation process for a job posting.
 }
 ```
 
+#### Generate Referral from Content
+```
+POST /api/v1/generate-referral/content
+```
+Processes raw job posting content and generates a referral message immediately in a single request.
+
+**Request:**
+```json
+{
+  "jobContent": "Jisr is hiring for Frontend Engineer | India\nFulltime\n•\n25-35 LPA\n•\n1-3 years\nOverview\n\nApplication\n\nAbout the company\n\nAt Jisr, you'll enjoy a welcoming and casual environment, company retreats, and the ability to interact with and learn from a growing Startup. We work hard and care about our most prized asset - our people..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "referralMessage": "Applying for Frontend Engineer at Jisr...",
+  "jobTitle": "Frontend Engineer",
+  "companyName": "Jisr",
+  "jobId": "content_12345678",
+  "processingTime": 1250,
+  "cached": false,
+  "authenticated": true
+}
+```
+
+If the same content has been processed before, it will return a cached result:
+
+**Cached Response:**
+```json
+{
+  "success": true,
+  "referralMessage": "Applying for Frontend Engineer at Jisr...",
+  "jobTitle": "Frontend Engineer",
+  "companyName": "Jisr",
+  "jobId": "content_12345678",
+  "cached": true,
+  "cachedAt": 1710323456789,
+  "authenticated": true
+}
+```
+
 #### Get Generated Referral
 ```
 POST /api/v1/generate-referral/result
 ```
-Retrieves the generated referral message.
+Retrieves the generated referral message for URL-based requests.
 
 **Request:**
 ```json
@@ -344,21 +388,30 @@ Retrieves the generated referral message.
 ```
 POST /api/v1/clear-cache
 ```
-Clears the cached referral message for a specific job URL or all cached entries.
+Clears the cached referral message for a specific job URL, content, or all cached entries.
 
-**Request (for specific job):**
+**Request (for URL-based job):**
 ```json
 {
   "jobUrl": "https://hirejobs.in/jobs/abc123"
 }
 ```
+
+**Request (for content-based job):**
+```json
+{
+  "jobId": "content_12345678"
+}
+```
+
 **Request (to clear all cache):**
 ```json
 {
   "jobUrl": "all"
 }
 ```
-**Response (for specific job):**
+
+**Response (for URL-based job):**
 ```json
 {
   "success": true,
@@ -367,6 +420,18 @@ Clears the cached referral message for a specific job URL or all cached entries.
   "authenticated": true
 }
 ```
+
+**Response (for content-based job):**
+```json
+{
+  "success": true,
+  "message": "Cache cleared for content ID: content_12345678",
+  "jobId": "content_12345678",
+  "cacheType": "content",
+  "authenticated": true
+}
+```
+
 **Response (for all cache):**
 ```json
 {

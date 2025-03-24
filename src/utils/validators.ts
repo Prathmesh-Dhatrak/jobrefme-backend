@@ -102,3 +102,31 @@ export function isValidApiKeyFormat(apiKey: string): boolean {
   
   return true;
 }
+
+/**
+ * Validates raw job content request
+ * Ensures the content meets minimum requirements before processing
+ */
+export function validateJobContentRequest(req: Request, _res: Response, next: NextFunction) {
+  const { jobContent } = req.body;
+  
+  if (!jobContent) {
+    return next(new ApiError(400, 'Job content is required'));
+  }
+
+  if (typeof jobContent !== 'string') {
+    return next(new ApiError(400, 'Job content must be a string'));
+  }
+
+  const content = jobContent.trim();
+  
+  if (content.length < 50) {
+    return next(new ApiError(400, 'Job content is too short. Please provide more comprehensive job details (minimum 50 characters).'));
+  }
+  
+  if (!/\w+/.test(content)) {
+    return next(new ApiError(400, 'Job content must contain text'));
+  }
+  
+  next();
+}
